@@ -56,6 +56,70 @@ docker compose up -d
 
 Then open <http://localhost:8484>.
 
+### Kubernetes / k3s
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dl4tv
+spec:
+  replicas: 1                     # state is flat files; do not scale this
+  selector:
+    matchLabels: { app: dl4tv }
+  template:
+    metadata:
+      labels: { app: dl4tv }
+    spec:
+      # kubelet otherwise injects DL4TV_PORT=tcp://10.43.0.1:8484 for a Service
+      # named dl4tv, which collides with dl4tv's own variable.
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000           # the uid that owns your media
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: dl4tv
+          image: ghcr.io/sneelco/dl4tv:dev
+          ports:
+            - { name: http, containerPort: 8484 }
+          env:
+            - name: DL4TV_PUBLIC_URL
+              value: "http://dl4tv.your-lan"
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: media, mountPath: /downloads }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+      volumes:
+        - name: config
+          persistentVolumeClaim: { claimName: dl4tv-config }
+        - name: media
+          persistentVolumeClaim: { claimName: dl4tv-media }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dl4tv
+spec:
+  selector: { app: dl4tv }
+  ports:
+    - { name: http, port: 8484, targetPort: http }
+```
+
+`enableServiceLinks: false` is the important line. Without it, a Service named
+`dl4tv` makes kubelet set `DL4TV_PORT=tcp://10.43.0.1:8484` in the pod, which is
+a URL rather than a port. dl4tv ignores such a value and logs a warning rather
+than failing to start, but turning the injection off is cleaner. If you need a
+non-default port and would rather not touch service links, set `DL4TV_HTTP_PORT`
+— nothing injects that name.
+
+Keep `replicas: 1`. State lives in flat files on a volume, and two replicas
+would sync the same playlists twice over each other.
+
 ### Running without Docker
 
 ```bash
@@ -282,7 +346,8 @@ if dl4tv is genuinely internet-facing.
 |---|---|---|
 | `DL4TV_CONFIG_DIR` | `/config` | Where `config.yaml`, `state.json` and `token.json` live |
 | `DL4TV_DOWNLOAD_DIR` | `/downloads` | Root for relative mapping folders |
-| `DL4TV_PORT` | `8484` | HTTP port |
+| `DL4TV_PORT` | `8484` | HTTP port. Ignored with a warning if something injects a URL here (see [Kubernetes](#kubernetes--k3s)) |
+| `DL4TV_HTTP_PORT` | *(unset)* | Same thing, under a name Kubernetes never injects; wins over `DL4TV_PORT` |
 | `DL4TV_HOST` | `0.0.0.0` | Bind address |
 | `DL4TV_PUBLIC_URL` | *(request host)* | Base URL used to build the OAuth redirect URI |
 | `DL4TV_PASSPHRASE` | *(unset)* | Locks the UI before first boot; cannot be changed from the UI |

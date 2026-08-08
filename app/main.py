@@ -38,6 +38,8 @@ async def lifespan(app: FastAPI):
     configure_logging()
     settings = env()
     settings.config_dir.mkdir(parents=True, exist_ok=True)
+    for warning in settings.warnings:
+        log.warning(warning)
     store = get_store()
     log.info(
         "dl4tv starting -- config=%s downloads=%s, %d playlist mapping(s)",
