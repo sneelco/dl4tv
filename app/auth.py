@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from typing import Any
 
 from .models import AppConfig
@@ -56,6 +58,45 @@ def build_flow(config: AppConfig, uri: str):
     return flow
 
 
+# Sign-in spans two requests: /auth/start builds the consent URL, and Google
+# sends the browser back to /auth/callback. PKCE means the verifier generated
+# for the first request has to be presented on the second one, so hold onto it
+# in between, keyed by the OAuth state parameter.
+_PENDING: dict[str, dict] = {}
+_PENDING_LOCK = threading.Lock()
+_PENDING_TTL_SECONDS = 900
+_PENDING_MAX = 8
+
+
+def _remember_flow(state: str, code_verifier: str | None, uri: str) -> None:
+    with _PENDING_LOCK:
+        now = time.monotonic()
+        for key, pending in list(_PENDING.items()):
+            if now - pending["created_at"] > _PENDING_TTL_SECONDS:
+                del _PENDING[key]
+        while len(_PENDING) >= _PENDING_MAX:
+            oldest = min(_PENDING, key=lambda k: _PENDING[k]["created_at"])
+            del _PENDING[oldest]
+        _PENDING[state] = {
+            "code_verifier": code_verifier,
+            "redirect_uri": uri,
+            "created_at": now,
+        }
+
+
+def _take_flow(state: str | None) -> dict | None:
+    """Pop a pending sign-in. Single use, so a code cannot be replayed."""
+    if not state:
+        return None
+    with _PENDING_LOCK:
+        pending = _PENDING.pop(state, None)
+    if pending is None:
+        return None
+    if time.monotonic() - pending["created_at"] > _PENDING_TTL_SECONDS:
+        return None
+    return pending
+
+
 def authorization_url(config: AppConfig, uri: str) -> tuple[str, str]:
     flow = build_flow(config, uri)
     url, state = flow.authorization_url(
@@ -64,11 +105,22 @@ def authorization_url(config: AppConfig, uri: str) -> tuple[str, str]:
         # Force a refresh token even when the account has consented before.
         prompt="consent",
     )
+    _remember_flow(state, flow.code_verifier, uri)
     return url, state
 
 
-def exchange_code(store: Store, config: AppConfig, uri: str, code: str) -> None:
-    flow = build_flow(config, uri)
+def exchange_code(store: Store, config: AppConfig, code: str, state: str | None) -> None:
+    pending = _take_flow(state)
+    if pending is None:
+        raise NotAuthenticated(
+            "This sign-in could not be matched to a request from this app. It may "
+            "have expired, dl4tv may have restarted, or the link was already used. "
+            "Click Connect again to start over."
+        )
+    flow = build_flow(config, pending["redirect_uri"])
+    # Without the verifier from /auth/start, Google rejects the exchange with
+    # "Missing code verifier".
+    flow.code_verifier = pending["code_verifier"]
     flow.fetch_token(code=code)
     store.write_token(flow.credentials.to_json())
     log.info("stored new YouTube OAuth token")

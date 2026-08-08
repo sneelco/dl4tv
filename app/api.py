@@ -196,16 +196,18 @@ async def auth_start(request: Request) -> Any:
 
 @router.get("/auth/callback", response_class=HTMLResponse)
 async def auth_callback(
-    request: Request, code: str | None = None, error: str | None = None
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
 ) -> HTMLResponse:
     if error:
         return _callback_page(f"Google returned an error: {error}", ok=False)
     if not code:
         return _callback_page("No authorization code was returned.", ok=False)
     store = get_store()
-    uri = gauth.redirect_uri(str(request.base_url))
     try:
-        await asyncio.to_thread(gauth.exchange_code, store, store.config, uri, code)
+        await asyncio.to_thread(gauth.exchange_code, store, store.config, code, state)
     except Exception as exc:  # noqa: BLE001
         log.error("OAuth exchange failed: %s", exc)
         return _callback_page(f"Could not complete sign-in: {exc}", ok=False)

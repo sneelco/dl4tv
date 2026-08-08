@@ -116,7 +116,12 @@ The rest of this section is only relevant if you want private playlists.
    click **Save credentials**, then **Connect YouTube account**.
 
 The resulting refresh token is stored in `/config/token.json` (mode `0600`).
-Only the read-only scope `youtube.readonly` is requested.
+Only the read-only scope `youtube.readonly` is requested, and the flow uses
+PKCE.
+
+Sign-in has to finish in one go: the browser round-trip is matched against the
+request that started it, so if dl4tv restarts midway, or the consent page sits
+open for more than 15 minutes, just click **Connect** again.
 
 ### Option B — API key
 
