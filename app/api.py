@@ -130,6 +130,7 @@ async def status(request: Request) -> dict:
         )
     return {
         "running": manager.running,
+        "cancelling": manager.cancelling,
         "progress": manager.progress,
         "next_run_at": manager.next_run_at,
         "schedule": config.schedule,

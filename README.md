@@ -204,6 +204,16 @@ descriptions rather than filenames.
 The dashboard shows each mapping's last sync, counts, and a live progress bar
 during a run. Expand **Details** for the per-video list.
 
+**Stop sync** appears next to the progress bar (and in the header) for as long
+as a run is going — including while a big playlist is still being listed, before
+any download has started. Stopping abandons the download in progress; anything
+already finished is kept, and the interrupted video is simply left untried
+rather than recorded as a failure. The run shows up as `cancelled`.
+
+If a playlist turns out to be far bigger than you expected, stop the run and
+then either untick **Enabled** on that mapping, or set **Max new per run** on it
+so it seeds a few videos at a time.
+
 Failures are classified so that hopeless ones stop consuming retries:
 
 | Kind | Meaning | Retried? |

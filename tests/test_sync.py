@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -321,3 +323,90 @@ async def test_unwritable_folder_is_reported_not_crashed(store, wire, env):
     assert run.status == "error"
     assert "Could not create download folder" in (run.error or "")
     assert store.state.playlist(mapping.id).last_status == "error"
+
+
+class SlowClient(FakeClient):
+    """Listing a huge playlist takes a while, as it does for real."""
+
+    def __init__(self, videos, delay=2.0):
+        super().__init__(videos)
+        self.delay = delay
+        self.listed = False
+
+    def playlist_video_ids(self, playlist_id, cap=None):
+        time.sleep(self.delay)
+        self.listed = True
+        return list(self.videos)
+
+
+async def test_stop_interrupts_a_slow_playlist_listing(store, wire, monkeypatch):
+    """Stop must respond while a big playlist is still being enumerated."""
+    wire([])
+    client = SlowClient([video(f"v{i}") for i in range(500)], delay=5.0)
+    monkeypatch.setattr(sync_module, "make_source", lambda _store: client)
+    manager = SyncManager(store)
+
+    task = asyncio.create_task(manager.run())
+    await asyncio.sleep(0.2)
+    assert manager.running
+    assert manager.cancel() is True
+
+    started = time.monotonic()
+    run = await asyncio.wait_for(task, timeout=3)
+    elapsed = time.monotonic() - started
+
+    assert run.status == "cancelled"
+    # Did not sit through the remaining ~4.8s of listing.
+    assert elapsed < 2, f"stop took {elapsed:.1f}s to take effect"
+    assert not client.listed
+
+
+async def test_stop_mid_download_leaves_the_rest_untouched(store, wire, monkeypatch):
+    ids = [f"v{i}" for i in range(30)]
+    calls: list[str] = []
+
+    def slow_download(video_id, dest, defaults, mapping=None, hook=None, info=None):
+        calls.append(video_id)
+        for _ in range(20):
+            time.sleep(0.01)
+            if hook:
+                hook({"status": "downloading", "downloaded_bytes": 1, "total_bytes": 100})
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / f"{video_id}.mkv"
+        path.write_bytes(b"x")
+        return DownloadOutcome(ok=True, path=str(path), filesize=1)
+
+    mapping, _ = wire([video(i) for i in ids])
+    monkeypatch.setattr(sync_module, "download_video", slow_download)
+    manager = SyncManager(store)
+
+    task = asyncio.create_task(manager.run())
+    await asyncio.sleep(0.4)
+    manager.cancel()
+    run = await asyncio.wait_for(task, timeout=10)
+
+    assert run.status == "cancelled"
+    assert 0 < len(calls) < len(ids)
+    # The abandoned video is not recorded as a failure -- it just was not tried.
+    records = store.state.playlist(mapping.id).videos
+    assert all(r.status != "failed" for r in records.values())
+    assert not manager.running and not manager.cancelling
+
+
+async def test_cancel_does_nothing_when_idle(store, wire):
+    wire([])
+    manager = SyncManager(store)
+
+    assert manager.cancel() is False
+    assert manager.cancelling is False
+
+
+async def test_a_later_run_is_unaffected_by_an_earlier_stop(store, wire):
+    mapping, calls = wire([video("a"), video("b")])
+    manager = SyncManager(store)
+    manager.cancel()  # no-op while idle
+
+    run = await manager.run()
+
+    assert run.status == "ok"
+    assert calls == ["a", "b"]

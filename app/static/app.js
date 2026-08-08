@@ -227,7 +227,9 @@ async function refreshStatus() {
     },
     { downloaded: 0, failed: 0 }
   );
-  $("#status-line").innerHTML = status.running
+  $("#status-line").innerHTML = status.cancelling
+    ? "Stopping the sync…"
+    : status.running
     ? "Sync running…"
     : `${status.playlists.length} playlist(s) · ${counts.downloaded} downloaded · ` +
       `${counts.failed} needing attention`;
@@ -240,14 +242,21 @@ async function refreshStatus() {
 
   $("#sync-all").disabled = status.running;
   $("#cancel-sync").style.display = status.running ? "" : "none";
+  $("#cancel-sync").disabled = status.cancelling;
+  $("#cancel-sync").textContent = status.cancelling ? "Stopping…" : "Stop sync";
+  $("#stop-sync").disabled = status.cancelling;
+  $("#stop-sync").textContent = status.cancelling ? "Stopping…" : "Stop sync";
 
   const progress = status.progress || {};
   const wrap = $("#progress-wrap");
-  if (status.running && progress.video_title) {
+  if (status.running) {
     wrap.style.display = "";
-    $("#progress-text").textContent =
-      `[${progress.index}/${progress.total}] ${progress.mapping_title} — ${progress.video_title}`;
-    $("#progress-pct").textContent = `${progress.percent ?? 0}%`;
+    $("#progress-text").textContent = progress.video_title
+      ? `[${progress.index}/${progress.total}] ${progress.mapping_title} — ${progress.video_title}`
+      : "Looking for new videos…";
+    $("#progress-pct").textContent = progress.video_title
+      ? `${progress.percent ?? 0}%`
+      : "";
     $("#progress-bar").value = progress.percent ?? 0;
   } else {
     wrap.style.display = "none";
@@ -426,10 +435,18 @@ $("#sync-all").addEventListener("click", async () => {
   }
 });
 
-$("#cancel-sync").addEventListener("click", async () => {
-  await api("/api/sync/cancel", { method: "POST" });
-  toast("Cancelling after the current video…");
-});
+async function requestStop() {
+  try {
+    await api("/api/sync/cancel", { method: "POST" });
+    toast("Stopping — the download in progress is abandoned", "ok");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+  refreshStatus();
+}
+
+$("#cancel-sync").addEventListener("click", requestStop);
+$("#stop-sync").addEventListener("click", requestStop);
 
 // --------------------------------------------------------------------------
 // playlists tab
