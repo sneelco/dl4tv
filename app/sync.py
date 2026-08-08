@@ -208,6 +208,23 @@ class SyncManager:
         destination = self.store.resolve_folder(mapping.folder)
         log.info("syncing %r -> %s", mapping.title, destination)
 
+        # Create the folder up front rather than on first download, so a newly
+        # mapped playlist shows up in ErsatzTV's library straight away -- even
+        # if this run turns out to have nothing new.
+        existed = destination.is_dir()
+        try:
+            await asyncio.to_thread(
+                lambda: destination.mkdir(parents=True, exist_ok=True)
+            )
+        except OSError as exc:
+            message = f"Could not create download folder {destination}: {exc}"
+            log.error(message)
+            run.error = run.error or message
+            self._finish_playlist(mapping, "error", message)
+            return
+        if not existed:
+            log.info("created download folder %s", destination)
+
         client = await asyncio.to_thread(make_source, self.store)
         try:
             video_ids = await asyncio.to_thread(client.playlist_video_ids, mapping.playlist_id)

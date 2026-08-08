@@ -94,6 +94,82 @@ function duration(seconds) {
 }
 
 // --------------------------------------------------------------------------
+// folder path autocomplete
+// --------------------------------------------------------------------------
+
+let autocompleteSeq = 0;
+
+/**
+ * Suggest existing sub-folders as the user types a path, and say plainly
+ * whether the folder is there yet — it gets created on the next sync.
+ */
+function attachFolderAutocomplete(input) {
+  if (!input || input.dataset.autocomplete) return;
+  input.dataset.autocomplete = "1";
+  input.setAttribute("autocomplete", "off");
+
+  const listId = `folder-options-${++autocompleteSeq}`;
+  const datalist = document.createElement("datalist");
+  datalist.id = listId;
+  input.setAttribute("list", listId);
+  input.after(datalist);
+
+  const hint = () => {
+    const holder = input.closest("div");
+    return holder ? holder.querySelector("[data-folder-hint]") : null;
+  };
+
+  const refresh = async () => {
+    const value = input.value;
+    // Absolute paths live outside the download root; nothing to suggest.
+    if (value.startsWith("/")) {
+      datalist.innerHTML = "";
+      const el = hint();
+      if (el) el.textContent = "Absolute path — used as-is.";
+      return;
+    }
+    const cut = value.lastIndexOf("/");
+    const parent = cut >= 0 ? value.slice(0, cut) : "";
+    const leaf = (cut >= 0 ? value.slice(cut + 1) : value).toLowerCase();
+
+    let data;
+    try {
+      data = await api(`/api/folders?path=${encodeURIComponent(parent)}`);
+    } catch {
+      datalist.innerHTML = "";
+      return;
+    }
+    datalist.innerHTML = data.folders
+      .filter((f) => f.name.toLowerCase().startsWith(leaf))
+      .slice(0, 25)
+      .map((f) => `<option value="${esc(f.path)}"></option>`)
+      .join("");
+
+    const el = hint();
+    if (!el) return;
+    if (!value.trim()) {
+      el.textContent = "";
+    } else if (!leaf) {
+      // Trailing slash: the path itself is the folder we just listed.
+      el.textContent = data.exists
+        ? "Folder exists."
+        : "Does not exist yet — created on the next sync.";
+    } else if (data.folders.some((f) => f.name.toLowerCase() === leaf)) {
+      el.textContent = "Folder exists.";
+    } else {
+      el.textContent = "Does not exist yet — created on the next sync.";
+    }
+  };
+
+  let timer;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(refresh, 200);
+  });
+  input.addEventListener("focus", refresh);
+}
+
+// --------------------------------------------------------------------------
 // navigation
 // --------------------------------------------------------------------------
 
@@ -376,7 +452,9 @@ async function loadMappings() {
       </div>
       <div class="playlist-body">
         <div class="grid">
-          <div><label>Folder</label><input type="text" data-folder value="${esc(m.folder)}"></div>
+          <div><label>Folder</label><input type="text" data-folder value="${esc(
+            m.folder
+          )}"><div class="hint" data-folder-hint></div></div>
           <div><label>Format override</label><input type="text" data-format value="${esc(
             m.format || ""
           )}" placeholder="inherit from settings"></div>
@@ -415,6 +493,7 @@ async function loadMappings() {
 
   $$("#mapping-list .playlist").forEach((card) => {
     const id = card.dataset.id;
+    attachFolderAutocomplete($("[data-folder]", card));
     $("[data-edit]", card).addEventListener("click", () => card.classList.toggle("open"));
     $("[data-enabled]", card).addEventListener("change", async (event) => {
       await patchMapping(id, { enabled: event.target.checked });
@@ -456,6 +535,8 @@ async function loadMappings() {
 function patchMapping(id, body) {
   return api(`/api/mappings/${id}`, { method: "PATCH", body });
 }
+
+attachFolderAutocomplete($("#add-folder"));
 
 $("#add-by-url").addEventListener("click", async () => {
   const query = $("#add-query").value.trim();
@@ -507,6 +588,7 @@ $("#load-playlists").addEventListener("click", async () => {
       )
       .join("")}</tbody></table>`;
 
+  $$("[data-folder]", container).forEach(attachFolderAutocomplete);
   $$("[data-add]", container).forEach((button) =>
     button.addEventListener("click", async () => {
       const row = button.closest("tr");
