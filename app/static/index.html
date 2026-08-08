@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dl4tv</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📺</text></svg>">
+</head>
+<body>
+
+<header>
+  <h1>dl<span>4</span>tv</h1>
+  <nav>
+    <button data-view="dashboard" class="active">Dashboard</button>
+    <button data-view="playlists">Playlists</button>
+    <button data-view="settings">Settings</button>
+    <button data-view="logs">Logs</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="auth-pill" class="pill"><span class="dot"></span><span>checking…</span></span>
+  <button id="sync-all" class="btn">Sync now</button>
+  <button id="cancel-sync" class="btn secondary" style="display:none">Cancel</button>
+</header>
+
+<main>
+
+  <!-- Dashboard -------------------------------------------------------- -->
+  <section id="view-dashboard" class="view active">
+    <div class="card">
+      <div class="row between">
+        <div>
+          <h3>Status</h3>
+          <div id="status-line" class="muted">Loading…</div>
+        </div>
+        <div style="text-align:right">
+          <h3>Next scheduled run</h3>
+          <div id="next-run" class="muted">—</div>
+        </div>
+      </div>
+      <div id="progress-wrap" style="display:none;margin-top:0.75rem">
+        <div class="row between">
+          <div id="progress-text" class="mono"></div>
+          <div id="progress-pct" class="muted"></div>
+        </div>
+        <progress id="progress-bar" max="100" value="0"></progress>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Playlists</h3>
+      <div id="playlist-list"><div class="empty">No playlists mapped yet.</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Recent runs</h3>
+      <div id="run-list"><div class="empty">Nothing has run yet.</div></div>
+    </div>
+  </section>
+
+  <!-- Playlists -------------------------------------------------------- -->
+  <section id="view-playlists" class="view">
+    <div class="card">
+      <h2>Add a playlist by link</h2>
+      <p class="muted">Paste a YouTube playlist URL or id. A channel URL works too &mdash; its
+      uploads playlist is used.</p>
+      <div class="grid">
+        <div>
+          <label for="add-query">Playlist or channel URL</label>
+          <input type="text" id="add-query" placeholder="https://www.youtube.com/playlist?list=PL…">
+        </div>
+        <div>
+          <label for="add-folder">Download folder</label>
+          <input type="text" id="add-folder" placeholder="ersatztv/cooking">
+          <div class="hint">Relative paths land under <span id="download-root" class="mono"></span></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:0.75rem">
+        <button id="add-by-url" class="btn">Add playlist</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin:0">Your YouTube playlists</h2>
+        <button id="load-playlists" class="btn secondary">Load from YouTube</button>
+      </div>
+      <p class="muted">Requires a connected Google account. Flag videos by adding them to one of
+      these playlists on YouTube, then map the playlist to a folder here.</p>
+      <div id="yt-playlists"></div>
+    </div>
+
+    <div class="card">
+      <h2>Mapped playlists</h2>
+      <div id="mapping-list"><div class="empty">Nothing mapped yet.</div></div>
+    </div>
+  </section>
+
+  <!-- Settings --------------------------------------------------------- -->
+  <section id="view-settings" class="view">
+    <div class="card">
+      <h2>YouTube account</h2>
+      <div id="auth-details" class="muted" style="margin-bottom:0.75rem"></div>
+      <div class="grid">
+        <div>
+          <label for="client-id">OAuth client id</label>
+          <input type="text" id="client-id" placeholder="…apps.googleusercontent.com">
+        </div>
+        <div>
+          <label for="client-secret">OAuth client secret</label>
+          <input type="password" id="client-secret" placeholder="GOCSPX-…">
+        </div>
+        <div>
+          <label for="api-key">API key (optional, public playlists only)</label>
+          <input type="password" id="api-key" placeholder="AIza…">
+        </div>
+      </div>
+      <div class="hint">Add this exact redirect URI to your Google OAuth client:
+        <span id="redirect-uri" class="mono"></span></div>
+      <div class="row" style="margin-top:0.75rem">
+        <button id="save-credentials" class="btn secondary">Save credentials</button>
+        <button id="connect" class="btn">Connect YouTube account</button>
+        <button id="disconnect" class="btn danger">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Schedule</h2>
+      <div class="grid">
+        <div class="check" style="align-self:end">
+          <input type="checkbox" id="sched-enabled">
+          <label for="sched-enabled">Run automatically</label>
+        </div>
+        <div>
+          <label for="sched-mode">Mode</label>
+          <select id="sched-mode">
+            <option value="daily">Daily at a fixed time</option>
+            <option value="interval">Every N minutes</option>
+          </select>
+        </div>
+        <div>
+          <label for="sched-time">Daily at (HH:MM)</label>
+          <input type="text" id="sched-time" placeholder="03:00">
+        </div>
+        <div>
+          <label for="sched-tz">Timezone</label>
+          <input type="text" id="sched-tz" placeholder="America/New_York">
+        </div>
+        <div>
+          <label for="sched-interval">Interval (minutes)</label>
+          <input type="number" id="sched-interval" min="5">
+        </div>
+        <div class="check" style="align-self:end">
+          <input type="checkbox" id="sched-onstart">
+          <label for="sched-onstart">Also sync on startup</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Downloads</h2>
+      <div class="grid">
+        <div>
+          <label for="dl-format">yt-dlp format selector</label>
+          <input type="text" id="dl-format">
+        </div>
+        <div>
+          <label for="dl-container">Merge container</label>
+          <input type="text" id="dl-container">
+        </div>
+        <div>
+          <label for="dl-template">Output template</label>
+          <input type="text" id="dl-template">
+        </div>
+        <div>
+          <label for="dl-cookies">Cookies file (optional)</label>
+          <input type="text" id="dl-cookies" placeholder="/config/cookies.txt">
+        </div>
+        <div>
+          <label for="dl-rate">Rate limit (e.g. 5M)</label>
+          <input type="text" id="dl-rate">
+        </div>
+        <div>
+          <label for="dl-subs">Subtitle languages</label>
+          <input type="text" id="dl-subs" placeholder="en,en-US">
+        </div>
+        <div>
+          <label for="dl-attempts">Attempts before giving up</label>
+          <input type="number" id="dl-attempts" min="1">
+        </div>
+        <div>
+          <label for="dl-max-new">Max new videos per run (blank = all)</label>
+          <input type="number" id="dl-max-new" min="1">
+        </div>
+        <div>
+          <label for="dl-sponsorblock">SponsorBlock categories to cut (comma separated)</label>
+          <input type="text" id="dl-sponsorblock" placeholder="sponsor,selfpromo">
+        </div>
+      </div>
+      <div class="row" style="margin-top:0.75rem">
+        <span class="check"><input type="checkbox" id="dl-metadata"><label for="dl-metadata">Embed metadata</label></span>
+        <span class="check"><input type="checkbox" id="dl-thumb"><label for="dl-thumb">Embed thumbnail</label></span>
+        <span class="check"><input type="checkbox" id="dl-writethumb"><label for="dl-writethumb">Save thumbnail file</label></span>
+        <span class="check"><input type="checkbox" id="dl-writesubs"><label for="dl-writesubs">Save subtitles</label></span>
+        <span class="check"><input type="checkbox" id="dl-embedsubs"><label for="dl-embedsubs">Embed subtitles</label></span>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="save-settings" class="btn">Save settings</button>
+      <span id="settings-saved" class="muted"></span>
+    </div>
+  </section>
+
+  <!-- Logs ------------------------------------------------------------- -->
+  <section id="view-logs" class="view">
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin:0">Activity log</h2>
+        <span class="check"><input type="checkbox" id="log-follow" checked><label for="log-follow">Follow</label></span>
+      </div>
+      <div id="logs"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toasts"></div>
+<template id="mapping-editor"></template>
+<script src="/static/app.js"></script>
+</body>
+</html>
