@@ -26,10 +26,22 @@ def _lazy_google() -> tuple[Any, Any, Any]:
     return Request, Credentials, Flow
 
 
-def redirect_uri(request_base_url: str | None = None) -> str:
+def public_base_url(config: AppConfig, request_base_url: str | None = None) -> str:
+    """dl4tv's address as a browser sees it.
+
+    An environment variable wins so a deployment can pin it; then the value set
+    in Settings; and only failing both, the host this request arrived on --
+    which is wrong behind a reverse proxy or a Kubernetes ingress.
+    """
+    for candidate in (env().public_url, config.public_url, request_base_url):
+        if candidate:
+            return candidate.strip().rstrip("/")
+    return ""
+
+
+def redirect_uri(config: AppConfig, request_base_url: str | None = None) -> str:
     """Where Google sends the browser back to after consent."""
-    base = env().public_url or (request_base_url or "").rstrip("/")
-    return f"{base}/auth/callback"
+    return f"{public_base_url(config, request_base_url)}/auth/callback"
 
 
 def _client_config(config: AppConfig, uri: str) -> dict:
@@ -185,5 +197,8 @@ def auth_status(store: Store, request_base_url: str | None = None) -> dict:
         "has_client": bool(config.youtube.client_id and config.youtube.client_secret),
         "has_api_key": bool(config.youtube.api_key),
         "token_present": store.read_token() is not None,
-        "redirect_uri": redirect_uri(request_base_url),
+        "redirect_uri": redirect_uri(config, request_base_url),
+        "public_url": config.public_url,
+        "public_url_managed_by_env": bool(env().public_url),
+        "effective_public_url": public_base_url(config, request_base_url),
     }

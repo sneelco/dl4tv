@@ -7,6 +7,7 @@ import logging
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -73,6 +74,8 @@ class MappingUpdate(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    # The address browsers use to reach dl4tv; "" clears it.
+    public_url: str | None = None
     schedule: Schedule | None = None
     downloads: DownloadDefaults | None = None
     youtube: YouTubeConfig | None = None
@@ -97,6 +100,20 @@ class UnlockRequest(BaseModel):
 class PassphraseRequest(BaseModel):
     # Empty (or null) removes the lock and reopens the UI.
     passphrase: str | None = None
+
+
+def _clean_public_url(value: str) -> str | None:
+    """Normalise the browser-facing base URL, or reject something unusable."""
+    url = (value or "").strip().rstrip("/")
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a full URL including the scheme, e.g. https://dl4tv.example.com",
+        )
+    return url
 
 
 # --------------------------------------------------------------------------
@@ -146,6 +163,8 @@ async def status(request: Request) -> dict:
 async def get_settings() -> dict:
     config = get_store().config
     return {
+        "public_url": config.public_url,
+        "public_url_managed_by_env": bool(env().public_url),
         "schedule": config.schedule,
         "downloads": config.downloads,
         "youtube": {
@@ -160,8 +179,15 @@ async def get_settings() -> dict:
 @router.put("/api/settings")
 async def put_settings(payload: SettingsUpdate) -> dict:
     store = get_store()
+    # Validate before touching the stored config, so a bad URL cannot leave a
+    # half-applied settings save behind.
+    public_url = (
+        _clean_public_url(payload.public_url) if payload.public_url is not None else None
+    )
 
     def mutate(config: AppConfig) -> None:
+        if payload.public_url is not None:
+            config.public_url = public_url
         if payload.schedule is not None:
             config.schedule = payload.schedule
         if payload.downloads is not None:
@@ -195,7 +221,7 @@ async def auth_status(request: Request) -> dict:
 @router.get("/auth/start")
 async def auth_start(request: Request) -> Any:
     store = get_store()
-    uri = gauth.redirect_uri(str(request.base_url))
+    uri = gauth.redirect_uri(store.config, str(request.base_url))
     try:
         url, _state = gauth.authorization_url(store.config, uri)
     except NotAuthenticated as exc:

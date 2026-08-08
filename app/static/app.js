@@ -671,6 +671,8 @@ async function loadSettings() {
   $("#dl-writesubs").checked = downloads.write_subtitles;
   $("#dl-embedsubs").checked = downloads.embed_subtitles;
 
+  $("#public-url").value = settings.public_url || "";
+  $("#public-url").disabled = settings.public_url_managed_by_env;
   $("#yt-source").value = youtube.source || "auto";
   $("#client-id").value = youtube.client_id || "";
   $("#client-secret").value = youtube.client_secret || "";
@@ -678,6 +680,11 @@ async function loadSettings() {
 
   const auth = await api("/api/auth/status");
   $("#redirect-uri").textContent = auth.redirect_uri;
+  $("#public-url-hint").textContent = auth.public_url_managed_by_env
+    ? "Set by the DL4TV_PUBLIC_URL environment variable — change it there, not here."
+    : auth.effective_public_url
+    ? `Currently using ${auth.effective_public_url}. Leave blank to use whatever address each request arrives on.`
+    : "Needed behind a reverse proxy or ingress, where the address dl4tv sees is not the one you use.";
   $("#source-hint").textContent =
     auth.effective_source === "yt-dlp"
       ? "Currently reading playlists with yt-dlp — no Google credentials in use."
@@ -697,6 +704,7 @@ function collectSettings() {
     return value === "" ? null : Number(value);
   };
   return {
+    public_url: $("#public-url").value.trim(),
     schedule: {
       enabled: $("#sched-enabled").checked,
       mode: $("#sched-mode").value,

@@ -206,3 +206,46 @@ def test_logs_endpoint(client):
     logging.getLogger("dl4tv.test").info("hello from the test")
     logs = client.get("/api/logs").json()["logs"]
     assert any("hello from the test" in entry["message"] for entry in logs)
+
+
+def test_public_url_setting_roundtrips(client):
+    response = client.put(
+        "/api/settings", json={"public_url": "https://dl4tv.example.com/"}
+    )
+
+    assert response.status_code == 200
+    # Normalised: no trailing slash.
+    assert response.json()["public_url"] == "https://dl4tv.example.com"
+    assert response.json()["public_url_managed_by_env"] is False
+
+    from app.store import get_store
+
+    assert get_store().config.public_url == "https://dl4tv.example.com"
+
+
+def test_public_url_can_be_cleared(client):
+    client.put("/api/settings", json={"public_url": "https://dl4tv.example.com"})
+
+    assert client.put("/api/settings", json={"public_url": ""}).json()["public_url"] is None
+
+
+def test_public_url_must_be_a_full_url(client):
+    for bad in ("dl4tv.example.com", "ftp://dl4tv.example.com", "https://"):
+        response = client.put("/api/settings", json={"public_url": bad})
+        assert response.status_code == 400, bad
+        assert "scheme" in response.json()["detail"]
+
+    # A rejected value leaves the stored setting alone.
+    from app.store import get_store
+
+    assert get_store().config.public_url is None
+
+
+def test_other_settings_are_untouched_when_public_url_is_omitted(client):
+    client.put("/api/settings", json={"public_url": "https://dl4tv.example.com"})
+
+    client.put("/api/settings", json={"schedule": {"enabled": False, "mode": "daily"}})
+
+    from app.store import get_store
+
+    assert get_store().config.public_url == "https://dl4tv.example.com"
