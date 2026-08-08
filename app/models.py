@@ -104,6 +104,10 @@ class Mapping(BaseModel):
 
 class AppConfig(BaseModel):
     version: int = 1
+    # The address you actually browse to. Only matters for building the OAuth
+    # redirect URI, which must match what Google has registered -- behind a
+    # reverse proxy or ingress the request's own host is not it.
+    public_url: str | None = None
     schedule: Schedule = Field(default_factory=Schedule)
     downloads: DownloadDefaults = Field(default_factory=DownloadDefaults)
     youtube: YouTubeConfig = Field(default_factory=YouTubeConfig)

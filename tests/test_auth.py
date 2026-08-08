@@ -114,12 +114,67 @@ def test_flow_requires_a_client(store):
         auth.authorization_url(AppConfig(), REDIRECT)
 
 
-def test_redirect_uri_prefers_the_configured_public_url(monkeypatch):
+def test_env_public_url_overrides_the_request_host(config, monkeypatch):
     from app import settings as settings_module
 
     monkeypatch.setenv("DL4TV_PUBLIC_URL", "https://dl4tv.example.com/")
     settings_module.env.cache_clear()
     try:
-        assert auth.redirect_uri("http://ignored/") == "https://dl4tv.example.com/auth/callback"
+        assert (
+            auth.redirect_uri(config, "http://ignored/")
+            == "https://dl4tv.example.com/auth/callback"
+        )
     finally:
         settings_module.env.cache_clear()
+
+
+# -- public URL ------------------------------------------------------------
+
+
+def test_public_url_prefers_config_over_the_request_host(config):
+    """Behind a proxy the request's own host is not the address you browse to."""
+    config.public_url = "https://dl4tv.example.com"
+
+    assert (
+        auth.redirect_uri(config, "http://10.42.0.7:8484/")
+        == "https://dl4tv.example.com/auth/callback"
+    )
+
+
+def test_public_url_falls_back_to_the_request_host(config):
+    assert (
+        auth.redirect_uri(config, "http://localhost:8484/")
+        == "http://localhost:8484/auth/callback"
+    )
+
+
+def test_env_public_url_wins_over_the_configured_one(config, monkeypatch):
+    from app import settings as settings_module
+
+    config.public_url = "https://from-settings.example.com"
+    monkeypatch.setenv("DL4TV_PUBLIC_URL", "https://from-env.example.com")
+    settings_module.env.cache_clear()
+    try:
+        assert (
+            auth.redirect_uri(config, "http://localhost:8484/")
+            == "https://from-env.example.com/auth/callback"
+        )
+    finally:
+        settings_module.env.cache_clear()
+
+
+def test_trailing_slashes_never_double_up(config):
+    config.public_url = "https://dl4tv.example.com/"
+
+    assert auth.redirect_uri(config) == "https://dl4tv.example.com/auth/callback"
+
+
+def test_the_authorization_url_uses_the_public_redirect(config, store):
+    config.public_url = "https://dl4tv.example.com"
+    uri = auth.redirect_uri(config)
+
+    url, state = auth.authorization_url(config, uri)
+
+    assert "redirect_uri=https%3A%2F%2Fdl4tv.example.com%2Fauth%2Fcallback" in url
+    # The exchange must reuse exactly the same redirect URI.
+    assert auth._PENDING[state]["redirect_uri"] == "https://dl4tv.example.com/auth/callback"

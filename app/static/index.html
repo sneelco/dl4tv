@@ -163,8 +163,16 @@
           <input type="password" id="api-key" placeholder="AIza…">
         </div>
       </div>
-      <div class="hint">Add this exact redirect URI to your Google OAuth client:
-        <span id="redirect-uri" class="mono"></span></div>
+      <div class="grid" style="margin-top:0.75rem">
+        <div>
+          <label for="public-url">dl4tv's URL as you browse to it</label>
+          <input type="text" id="public-url" placeholder="https://dl4tv.example.com">
+          <div class="hint" id="public-url-hint">Needed behind a reverse proxy or ingress,
+          where the address dl4tv sees is not the one you use.</div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:0.5rem">Add this exact redirect URI to your
+        Google OAuth client: <span id="redirect-uri" class="mono"></span></div>
       <div class="row" style="margin-top:0.75rem">
         <button id="save-credentials" class="btn secondary">Save credentials</button>
         <button id="connect" class="btn">Connect YouTube account</button>

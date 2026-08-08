@@ -84,8 +84,11 @@ spec:
           ports:
             - { name: http, containerPort: 8484 }
           env:
+            # Optional -- the same thing can be set in Settings. Needed so the
+            # OAuth redirect URI matches the address you browse to, not the
+            # pod's.
             - name: DL4TV_PUBLIC_URL
-              value: "http://dl4tv.your-lan"
+              value: "https://dl4tv.your-lan"
           volumeMounts:
             - { name: config, mountPath: /config }
             - { name: media, mountPath: /downloads }
@@ -174,8 +177,7 @@ The rest of this section is only relevant if you want private playlists.
    application type **Web application**.
 5. Under *Authorised redirect URIs* add exactly what dl4tv shows on its
    Settings page, e.g. `http://localhost:8484/auth/callback`. This must match
-   character for character, so set `DL4TV_PUBLIC_URL` to the address you
-   actually browse to.
+   character for character — see below if that URI looks wrong.
 6. Copy the client id and secret into dl4tv's **Settings → YouTube account**,
    click **Save credentials**, then **Connect YouTube account**.
 
@@ -186,6 +188,21 @@ PKCE.
 Sign-in has to finish in one go: the browser round-trip is matched against the
 request that started it, so if dl4tv restarts midway, or the consent page sits
 open for more than 15 minutes, just click **Connect** again.
+
+### If the redirect URI looks wrong
+
+By default dl4tv builds the redirect URI from whatever address the request
+arrived on. Behind a reverse proxy, an ingress, or a Tailscale hostname, that is
+the internal address rather than the one you type — so Google is handed a
+redirect it will refuse.
+
+Set **Settings → dl4tv's URL as you browse to it** to the address you actually
+use (`https://dl4tv.homelab.example`, scheme included). The Settings page then
+shows the exact redirect URI to paste into your Google OAuth client.
+
+`DL4TV_PUBLIC_URL` does the same thing from the environment and wins over the
+setting, which is handy when the deployment already knows its own hostname; the
+UI shows the field as env-managed in that case.
 
 ### Option B — API key
 
@@ -349,7 +366,7 @@ if dl4tv is genuinely internet-facing.
 | `DL4TV_PORT` | `8484` | HTTP port. Ignored with a warning if something injects a URL here (see [Kubernetes](#kubernetes--k3s)) |
 | `DL4TV_HTTP_PORT` | *(unset)* | Same thing, under a name Kubernetes never injects; wins over `DL4TV_PORT` |
 | `DL4TV_HOST` | `0.0.0.0` | Bind address |
-| `DL4TV_PUBLIC_URL` | *(request host)* | Base URL used to build the OAuth redirect URI |
+| `DL4TV_PUBLIC_URL` | *(request host)* | Base URL used to build the OAuth redirect URI. Same as the Settings field, but wins over it |
 | `DL4TV_PASSPHRASE` | *(unset)* | Locks the UI before first boot; cannot be changed from the UI |
 | `DL4TV_LOG_LEVEL` | `INFO` | `DEBUG` for yt-dlp detail |
 | `DL4TV_OAUTH_INSECURE_TRANSPORT` | `true` | Allows a plain-http redirect URI (normal for a LAN install) |
