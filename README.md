@@ -242,7 +242,7 @@ count, and a global max-new-per-run.
 
 ## Container images
 
-Published to GitHub Container Registry for `linux/amd64` and `linux/arm64`:
+Published to GitHub Container Registry for `linux/amd64`:
 
 | Tag | Built from |
 |---|---|
