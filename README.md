@@ -153,7 +153,11 @@ credentials at all:
 | `https://www.youtube.com/channel/UC…` | the channel's uploads |
 
 Folder paths are relative to `DL4TV_DOWNLOAD_DIR` (`cooking` →
-`/downloads/cooking`); absolute paths are used as-is.
+`/downloads/cooking`); absolute paths are used as-is. The folder field
+autocompletes against folders that already exist and tells you when the one you
+typed is new — dl4tv creates it (and any missing parents) at the start of the
+next sync, so a freshly mapped playlist shows up in ErsatzTV's library even
+before it has downloaded anything.
 
 With a connected Google account you also get **Playlists tab → Load from
 YouTube**, which lists everything on the account — including private playlists,

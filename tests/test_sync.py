@@ -42,9 +42,8 @@ def wire(store, monkeypatch):
     """Install a mapping plus fakes for the YouTube client and the downloader."""
 
     def setup(videos, outcomes=None, missing=None, **mapping_kwargs):
-        mapping = Mapping(
-            playlist_id="PL1", title="Cooking", folder="cooking", **mapping_kwargs
-        )
+        mapping_kwargs.setdefault("folder", "cooking")
+        mapping = Mapping(playlist_id="PL1", title="Cooking", **mapping_kwargs)
         store.update_config(lambda config: config.mappings.append(mapping))
         client = FakeClient(videos, missing)
         monkeypatch.setattr(sync_module, "make_source", lambda _store: client)
@@ -298,3 +297,27 @@ async def test_missing_ffmpeg_does_not_consume_retries(store, wire):
     assert record.permanent is False
     # Still being tried on every run, unlike a normal transient failure.
     assert calls == ["a", "a", "a", "a"]
+
+
+async def test_folder_is_created_even_with_nothing_to_download(store, wire, env):
+    """A newly mapped playlist should appear in the library right away."""
+    wire([])
+    assert not (env.download_dir / "cooking").exists()
+
+    await SyncManager(store).run()
+
+    assert (env.download_dir / "cooking").is_dir()
+
+
+async def test_unwritable_folder_is_reported_not_crashed(store, wire, env):
+    # A file where the parent folder should be: mkdir cannot succeed.
+    (env.download_dir / "cooking").write_text("not a directory")
+    mapping, calls = wire([video("a")], folder="cooking/nested")
+    manager = SyncManager(store)
+
+    run = await manager.run()
+
+    assert calls == []
+    assert run.status == "error"
+    assert "Could not create download folder" in (run.error or "")
+    assert store.state.playlist(mapping.id).last_status == "error"
