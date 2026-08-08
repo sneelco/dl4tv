@@ -20,7 +20,13 @@ from app.models import DownloadDefaults, Mapping
         ("Sign in to confirm you're not a bot", "bot_check", False),
         ("This live event will begin in 3 hours", "live_or_upcoming", False),
         ("OSError: [Errno 28] No space left on device", "disk", False),
+        (
+            "You have requested merging of multiple formats but ffmpeg is not installed",
+            "no_ffmpeg",
+            False,
+        ),
         ("Unable to download webpage: The read operation timed out", "network", False),
+        ("unable to download video data: HTTP Error 403: Forbidden", "network", False),
         ("something nobody has ever seen before", "unknown", False),
     ],
 )

@@ -109,13 +109,6 @@ def access_token(store: Store) -> str | None:
     return credentials.token if credentials else None
 
 
-def make_client(store: Store) -> YouTubeClient:
-    """Preferred client: OAuth when connected, otherwise the API key."""
-    return YouTubeClient(
-        access_token=access_token(store), api_key=store.config.youtube.api_key
-    )
-
-
 def auth_status(store: Store, request_base_url: str | None = None) -> dict:
     config = store.config
     credentials = load_credentials(store)
@@ -130,8 +123,12 @@ def auth_status(store: Store, request_base_url: str | None = None) -> dict:
                     channel = items[0].get("snippet", {}).get("title")
         except Exception as exc:  # noqa: BLE001 - status must never 500
             log.debug("could not read channel name: %s", exc)
+    from .sources import effective_source  # noqa: PLC0415 - avoids a cycle
+
     return {
         "connected": connected,
+        "source": config.youtube.source,
+        "effective_source": effective_source(config, connected),
         "channel": channel,
         "has_client": bool(config.youtube.client_id and config.youtube.client_secret),
         "has_api_key": bool(config.youtube.api_key),

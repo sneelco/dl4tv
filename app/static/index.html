@@ -85,8 +85,9 @@
         <h2 style="margin:0">Your YouTube playlists</h2>
         <button id="load-playlists" class="btn secondary">Load from YouTube</button>
       </div>
-      <p class="muted">Requires a connected Google account. Flag videos by adding them to one of
-      these playlists on YouTube, then map the playlist to a folder here.</p>
+      <p class="muted">Browsing your own playlists requires a connected Google account &mdash;
+      public playlists can always be added by link above. Flag videos by adding them to one
+      of these playlists on YouTube, then map the playlist to a folder here.</p>
       <div id="yt-playlists"></div>
     </div>
 
@@ -99,7 +100,26 @@
   <!-- Settings --------------------------------------------------------- -->
   <section id="view-settings" class="view">
     <div class="card">
+      <h2>Playlist source</h2>
+      <p class="muted">Where playlist listings come from. yt-dlp needs no Google account,
+      no API key and has no quota, but only sees public playlists.</p>
+      <div class="grid">
+        <div>
+          <label for="yt-source">Source</label>
+          <select id="yt-source">
+            <option value="auto">Automatic &mdash; use the API if credentials exist, else yt-dlp</option>
+            <option value="yt-dlp">yt-dlp only &mdash; no credentials needed, public playlists</option>
+            <option value="api">YouTube Data API only &mdash; requires OAuth or an API key</option>
+          </select>
+          <div class="hint" id="source-hint"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>YouTube account</h2>
+      <p class="muted">Only needed for private playlists, or to browse your own playlists
+      from this UI. Public playlists work without any of this.</p>
       <div id="auth-details" class="muted" style="margin-bottom:0.75rem"></div>
       <div class="grid">
         <div>
