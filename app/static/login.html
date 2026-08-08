@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dl4tv — locked</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📺</text></svg>">
+</head>
+<body>
+
+<main style="max-width:380px;margin-top:12vh">
+  <div class="card">
+    <h1 style="font-size:1.3rem;margin:0 0 0.25rem">dl<span style="color:var(--accent)">4</span>tv</h1>
+    <p class="muted" style="margin-top:0">This instance is locked.</p>
+    <form id="unlock-form">
+      <label for="passphrase">Passphrase</label>
+      <input type="password" id="passphrase" autocomplete="current-password" autofocus>
+      <div class="hint" id="error" style="color:var(--err)"></div>
+      <div class="row" style="margin-top:0.9rem">
+        <button class="btn" type="submit" id="submit">Unlock</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<script>
+const form = document.querySelector("#unlock-form");
+const error = document.querySelector("#error");
+const submit = document.querySelector("#submit");
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const passphrase = document.querySelector("#passphrase").value;
+  if (!passphrase) return;
+  error.textContent = "";
+  submit.disabled = true;
+  try {
+    const response = await fetch("/api/access/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passphrase }),
+    });
+    if (response.ok) {
+      window.location.href = "/";
+      return;
+    }
+    const body = await response.json().catch(() => ({}));
+    error.textContent = body.detail || "Could not unlock.";
+  } catch (err) {
+    error.textContent = `Could not reach dl4tv: ${err.message}`;
+  } finally {
+    submit.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

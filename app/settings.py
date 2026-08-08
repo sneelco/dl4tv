@@ -27,8 +27,8 @@ class Env:
     host: str
     port: int
     public_url: str | None
-    username: str | None
-    password: str | None
+    # Locks the UI before first boot; the UI cannot change or clear it.
+    passphrase: str | None
     log_level: str
     insecure_oauth_transport: bool
 
@@ -45,8 +45,8 @@ class Env:
         return self.config_dir / "token.json"
 
     @property
-    def auth_enabled(self) -> bool:
-        return bool(self.username and self.password)
+    def session_key_file(self) -> Path:
+        return self.config_dir / "session.key"
 
 
 @lru_cache(maxsize=1)
@@ -60,8 +60,7 @@ def env() -> Env:
         host=os.environ.get("DL4TV_HOST", "0.0.0.0"),
         port=int(os.environ.get("DL4TV_PORT", "8484")),
         public_url=public_url.rstrip("/") if public_url else None,
-        username=os.environ.get("DL4TV_USERNAME") or None,
-        password=os.environ.get("DL4TV_PASSWORD") or None,
+        passphrase=os.environ.get("DL4TV_PASSPHRASE") or None,
         log_level=os.environ.get("DL4TV_LOG_LEVEL", "INFO").upper(),
         # Google's OAuth library refuses plain-http redirect URIs unless told
         # otherwise. Self-hosted installs are usually http on a LAN.

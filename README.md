@@ -235,6 +235,35 @@ and most bot checks.
 
 ---
 
+## Locking it down
+
+dl4tv is **open by default** — anyone who can reach the page can use it. That is
+usually what you want on a home network, but it does hold a YouTube token, so
+if the port is exposed anywhere less trusted, set a passphrase.
+
+**Settings → Access**, type a passphrase twice, click *Set passphrase*. That is
+the whole thing: one passphrase, no usernames, no accounts. The browser you set
+it from stays signed in, and everyone else gets an unlock page.
+
+- Only an scrypt hash goes into `config.yaml` — never the passphrase itself.
+- Sessions are a signed cookie, good for 30 days, and survive a restart.
+- Changing the passphrase signs every other browser out.
+- **Lock** in the header forgets the current browser's session without changing
+  the passphrase.
+- Scripts can authenticate with HTTP basic, any username:
+  `curl -u :your-passphrase http://dl4tv:8484/api/status`
+- Forgot it? Delete the `security:` block from `config.yaml` and restart.
+
+Set `DL4TV_PASSPHRASE` instead if you want the lock in place from the very first
+boot — useful when the port is public before you have had a chance to configure
+anything. A passphrase set that way cannot be changed or removed from the UI.
+
+This is a single shared secret over whatever transport you put it behind. It
+keeps casual visitors out; it is not a substitute for a reverse proxy with TLS
+if dl4tv is genuinely internet-facing.
+
+---
+
 ## Configuration
 
 ### Environment variables
@@ -246,13 +275,11 @@ and most bot checks.
 | `DL4TV_PORT` | `8484` | HTTP port |
 | `DL4TV_HOST` | `0.0.0.0` | Bind address |
 | `DL4TV_PUBLIC_URL` | *(request host)* | Base URL used to build the OAuth redirect URI |
-| `DL4TV_USERNAME` / `DL4TV_PASSWORD` | *(unset)* | Enables HTTP basic auth on the UI |
+| `DL4TV_PASSPHRASE` | *(unset)* | Locks the UI before first boot; cannot be changed from the UI |
 | `DL4TV_LOG_LEVEL` | `INFO` | `DEBUG` for yt-dlp detail |
 | `DL4TV_OAUTH_INSECURE_TRANSPORT` | `true` | Allows a plain-http redirect URI (normal for a LAN install) |
 
-dl4tv has **no authentication by default** and it holds a YouTube token — keep
-it on a trusted network, or set `DL4TV_USERNAME`/`DL4TV_PASSWORD`, or put it
-behind whatever reverse proxy already fronts your other services.
+See [Locking it down](#locking-it-down) for the passphrase.
 
 ### Files
 

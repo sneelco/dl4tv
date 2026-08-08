@@ -8,9 +8,9 @@ services:
     environment:
       # Must match the redirect URI registered on your Google OAuth client.
       DL4TV_PUBLIC_URL: "http://localhost:8484"
-      # Optional HTTP basic auth for the UI.
-      # DL4TV_USERNAME: "admin"
-      # DL4TV_PASSWORD: "change-me"
+      # Optional: lock the UI from first boot. You can also set a passphrase
+      # later in Settings -> Access.
+      # DL4TV_PASSPHRASE: "change-me"
       DL4TV_LOG_LEVEL: "INFO"
     # Run as the user that owns your media library so downloads are readable
     # by ErsatzTV.
