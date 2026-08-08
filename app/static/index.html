@@ -21,7 +21,7 @@
   <span id="auth-pill" class="pill"><span class="dot"></span><span>checking…</span></span>
   <button id="lock-now" class="btn secondary" style="display:none" title="Forget this browser's session">Lock</button>
   <button id="sync-all" class="btn">Sync now</button>
-  <button id="cancel-sync" class="btn secondary" style="display:none">Cancel</button>
+  <button id="cancel-sync" class="btn secondary" style="display:none">Stop sync</button>
 </header>
 
 <main>
@@ -42,7 +42,10 @@
       <div id="progress-wrap" style="display:none;margin-top:0.75rem">
         <div class="row between">
           <div id="progress-text" class="mono"></div>
-          <div id="progress-pct" class="muted"></div>
+          <div class="row">
+            <span id="progress-pct" class="muted"></span>
+            <button id="stop-sync" class="btn small danger">Stop sync</button>
+          </div>
         </div>
         <progress id="progress-bar" max="100" value="0"></progress>
       </div>

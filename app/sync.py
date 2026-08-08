@@ -143,7 +143,32 @@ class SyncManager:
         if not self.running:
             return False
         self._cancel.set()
+        log.info("stop requested -- finishing up")
         return True
+
+    @property
+    def cancelling(self) -> bool:
+        return self.running and self._cancel.is_set()
+
+    async def _interruptible(self, func, *args):
+        """Run a blocking call in a thread, but stop waiting if cancelled.
+
+        Listing a large playlist can take a while, and the thread running it
+        cannot be interrupted. Rather than make Stop unresponsive until it
+        returns, give up waiting and let the abandoned call finish unnoticed.
+        """
+        work = asyncio.create_task(asyncio.to_thread(func, *args))
+        waiter = asyncio.create_task(self._cancel.wait())
+        done, _pending = await asyncio.wait(
+            {work, waiter}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if work in done:
+            waiter.cancel()
+            return work.result()
+        # Swallow whatever the abandoned call does, so it cannot surface later
+        # as an unretrieved task exception.
+        work.add_done_callback(lambda task: task.cancelled() or task.exception())
+        raise SyncCancelled()
 
     # -- the run itself ---------------------------------------------------
 
@@ -227,7 +252,9 @@ class SyncManager:
 
         client = await asyncio.to_thread(make_source, self.store)
         try:
-            video_ids = await asyncio.to_thread(client.playlist_video_ids, mapping.playlist_id)
+            video_ids = await self._interruptible(
+                client.playlist_video_ids, mapping.playlist_id
+            )
             playlist_state = self.store.state.playlist(mapping.id)
             playlist_state.playlist_id = mapping.playlist_id
 
@@ -250,7 +277,7 @@ class SyncManager:
                 self._finish_playlist(mapping, "ok", None)
                 return
 
-            details = await asyncio.to_thread(client.video_details, candidates)
+            details = await self._interruptible(client.video_details, candidates)
         finally:
             await asyncio.to_thread(client.close)
 
