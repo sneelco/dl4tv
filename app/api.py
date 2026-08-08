@@ -15,6 +15,7 @@ from . import auth as gauth
 from . import logbuf
 from .models import AppConfig, DownloadDefaults, Mapping, Schedule, YouTubeConfig
 from .settings import env
+from .sources import make_source
 from .store import get_store
 from .sync import get_manager
 from .youtube import NotAuthenticated, YouTubeError
@@ -137,6 +138,7 @@ async def get_settings() -> dict:
         "schedule": config.schedule,
         "downloads": config.downloads,
         "youtube": {
+            "source": config.youtube.source,
             "api_key": _masked(config.youtube.api_key),
             "client_id": config.youtube.client_id,
             "client_secret": _masked(config.youtube.client_secret),
@@ -155,6 +157,7 @@ async def put_settings(payload: SettingsUpdate) -> dict:
             config.downloads = payload.downloads
         if payload.youtube is not None:
             config.youtube = YouTubeConfig(
+                source=payload.youtube.source,
                 api_key=_unmask(payload.youtube.api_key, config.youtube.api_key),
                 client_id=(payload.youtube.client_id or "").strip() or None,
                 client_secret=_unmask(
@@ -193,16 +196,18 @@ async def auth_start(request: Request) -> Any:
 
 @router.get("/auth/callback", response_class=HTMLResponse)
 async def auth_callback(
-    request: Request, code: str | None = None, error: str | None = None
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
 ) -> HTMLResponse:
     if error:
         return _callback_page(f"Google returned an error: {error}", ok=False)
     if not code:
         return _callback_page("No authorization code was returned.", ok=False)
     store = get_store()
-    uri = gauth.redirect_uri(str(request.base_url))
     try:
-        await asyncio.to_thread(gauth.exchange_code, store, store.config, uri, code)
+        await asyncio.to_thread(gauth.exchange_code, store, store.config, code, state)
     except Exception as exc:  # noqa: BLE001
         log.error("OAuth exchange failed: %s", exc)
         return _callback_page(f"Could not complete sign-in: {exc}", ok=False)
@@ -240,7 +245,7 @@ async def list_playlists() -> dict:
     store = get_store()
 
     def work() -> list[dict]:
-        with gauth.make_client(store) as client:
+        with make_source(store) as client:
             return [vars(p) for p in client.my_playlists()]
 
     try:
@@ -257,7 +262,7 @@ async def resolve_playlist(payload: ResolveRequest) -> dict:
     store = get_store()
 
     def work() -> dict:
-        with gauth.make_client(store) as client:
+        with make_source(store) as client:
             return vars(client.resolve_playlist(payload.query))
 
     try:
@@ -295,7 +300,7 @@ async def create_mapping(payload: MappingCreate) -> Mapping:
             )
 
         def work() -> Any:
-            with gauth.make_client(store) as client:
+            with make_source(store) as client:
                 return client.resolve_playlist(payload.query or "")
 
         try:

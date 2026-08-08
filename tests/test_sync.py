@@ -47,7 +47,7 @@ def wire(store, monkeypatch):
         )
         store.update_config(lambda config: config.mappings.append(mapping))
         client = FakeClient(videos, missing)
-        monkeypatch.setattr(sync_module, "make_client", lambda _store: client)
+        monkeypatch.setattr(sync_module, "make_source", lambda _store: client)
 
         calls: list[str] = []
 
@@ -153,7 +153,7 @@ async def test_live_video_is_skipped_but_reconsidered_later(store, wire, monkeyp
 
     # The premiere has happened: the same video now downloads.
     client = FakeClient([video("a")])
-    monkeypatch.setattr(sync_module, "make_client", lambda _store: client)
+    monkeypatch.setattr(sync_module, "make_source", lambda _store: client)
     await manager.run()
     assert calls == ["a"]
 
@@ -191,7 +191,7 @@ async def test_playlist_error_does_not_abort_the_run(store, wire, monkeypatch):
         def playlist_video_ids(self, playlist_id, cap=None):
             raise RuntimeError("API exploded")
 
-    monkeypatch.setattr(sync_module, "make_client", lambda _store: Broken([]))
+    monkeypatch.setattr(sync_module, "make_source", lambda _store: Broken([]))
     manager = SyncManager(store)
 
     run = await manager.run()
@@ -276,3 +276,25 @@ def test_needs_attempt():
     assert needs_attempt(VideoRecord(video_id="a", status="failed", permanent=True), 3, exists) is False
     assert needs_attempt(VideoRecord(video_id="a", status="failed", attempts=1), 3, exists) is True
     assert needs_attempt(VideoRecord(video_id="a", status="failed", attempts=3), 3, exists) is False
+
+
+async def test_missing_ffmpeg_does_not_consume_retries(store, wire):
+    """An install problem must not permanently write off a whole playlist."""
+    outcome = DownloadOutcome(
+        ok=False,
+        error="You have requested merging of multiple formats but ffmpeg is not installed",
+        error_kind="no_ffmpeg",
+        permanent=False,
+    )
+    mapping, calls = wire([video("a")], outcomes={"a": outcome})
+    store.update_config(lambda config: setattr(config.downloads, "max_attempts", 2))
+    manager = SyncManager(store)
+
+    for _ in range(4):
+        await manager.run()
+
+    record = store.state.playlist(mapping.id).videos["a"]
+    assert record.attempts == 0
+    assert record.permanent is False
+    # Still being tried on every run, unlike a normal transient failure.
+    assert calls == ["a", "a", "a", "a"]

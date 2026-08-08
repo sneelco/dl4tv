@@ -48,6 +48,13 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], ErrorKind, bool]] = [
         "unavailable",
         True,
     ),
+    # An install problem rather than a video problem -- see sync.py, which
+    # deliberately does not count these against a video's retry budget.
+    (
+        re.compile(r"ffmpeg is not installed|ffprobe.*not installed|ffmpeg not found", re.I),
+        "no_ffmpeg",
+        False,
+    ),
     (re.compile(r"not a bot|sign in to confirm", re.I), "bot_check", False),
     (
         re.compile(r"live event will begin|premieres in|is live|live stream recording", re.I),
@@ -58,7 +65,8 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], ErrorKind, bool]] = [
     (
         re.compile(
             r"timed out|timeout|connection|temporary failure in name resolution|"
-            r"network|http error 5\d\d|unable to connect|remote end closed",
+            r"network|http error 5\d\d|http error 403|unable to connect|remote end closed|"
+            r"proxy",
             re.I,
         ),
         "network",

@@ -126,12 +126,15 @@ async function refreshStatus() {
 
   const auth = status.auth;
   const pill = $("#auth-pill");
-  pill.className = `pill ${auth.connected ? "ok" : auth.has_api_key ? "warn" : "err"}`;
+  const usable = auth.connected || auth.has_api_key || auth.effective_source === "yt-dlp";
+  pill.className = `pill ${auth.connected ? "ok" : usable ? "warn" : "err"}`;
   pill.lastElementChild.textContent = auth.connected
     ? `Connected${auth.channel ? `: ${auth.channel}` : ""}`
     : auth.has_api_key
-    ? "API key only"
-    : "Not connected";
+    ? "API key"
+    : auth.effective_source === "yt-dlp"
+    ? "yt-dlp (public playlists)"
+    : "No credentials";
 
   const counts = status.playlists.reduce(
     (acc, p) => {
@@ -562,12 +565,17 @@ async function loadSettings() {
   $("#dl-writesubs").checked = downloads.write_subtitles;
   $("#dl-embedsubs").checked = downloads.embed_subtitles;
 
+  $("#yt-source").value = youtube.source || "auto";
   $("#client-id").value = youtube.client_id || "";
   $("#client-secret").value = youtube.client_secret || "";
   $("#api-key").value = youtube.api_key || "";
 
   const auth = await api("/api/auth/status");
   $("#redirect-uri").textContent = auth.redirect_uri;
+  $("#source-hint").textContent =
+    auth.effective_source === "yt-dlp"
+      ? "Currently reading playlists with yt-dlp — no Google credentials in use."
+      : "Currently reading playlists with the YouTube Data API.";
   $("#auth-details").textContent = auth.connected
     ? `Connected${auth.channel ? ` as ${auth.channel}` : ""}.`
     : auth.has_client
@@ -612,6 +620,7 @@ function collectSettings() {
       embed_subtitles: $("#dl-embedsubs").checked,
     },
     youtube: {
+      source: $("#yt-source").value,
       client_id: $("#client-id").value.trim() || null,
       client_secret: $("#client-secret").value || null,
       api_key: $("#api-key").value || null,

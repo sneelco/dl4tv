@@ -153,9 +153,51 @@ def test_video_retry_and_forget(client):
 
 
 def test_playlists_endpoint_reports_missing_credentials(client):
+    # With no credentials the yt-dlp source takes over, and it cannot enumerate
+    # an account's own playlists -- only public ones added by URL.
     response = client.get("/api/youtube/playlists")
     assert response.status_code == 401
-    assert "credentials" in response.json()["detail"].lower()
+    assert "google account" in response.json()["detail"].lower()
+
+
+def test_public_playlist_can_be_added_without_any_credentials(client, monkeypatch):
+    """The whole point of the yt-dlp source: no API key, no OAuth, still works."""
+    from app.ytdlp import YtDlpSource
+
+    def fake_extract(url, limit=None):
+        assert "list=PLpublic" in url
+        return {
+            "title": "Public Cooking",
+            "playlist_count": 3,
+            "entries": [{"id": "a", "title": "Video a", "duration": 600}],
+        }
+
+    monkeypatch.setattr(
+        api_module, "make_source", lambda store: YtDlpSource(extractor=fake_extract)
+    )
+
+    created = client.post(
+        "/api/mappings",
+        json={
+            "query": "https://www.youtube.com/playlist?list=PLpublic",
+            "folder": "cooking",
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["playlist_id"] == "PLpublic"
+    assert created.json()["title"] == "Public Cooking"
+
+
+def test_settings_expose_the_playlist_source(client):
+    assert client.get("/api/settings").json()["youtube"]["source"] == "auto"
+
+    response = client.put("/api/settings", json={"youtube": {"source": "yt-dlp"}})
+
+    assert response.json()["youtube"]["source"] == "yt-dlp"
+    from app.store import get_store
+
+    assert get_store().config.youtube.source == "yt-dlp"
 
 
 def test_logs_endpoint(client):

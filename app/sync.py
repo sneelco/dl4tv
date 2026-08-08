@@ -13,7 +13,6 @@ from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .auth import make_client
 from .downloader import download_video
 from .models import (
     AppConfig,
@@ -23,10 +22,16 @@ from .models import (
     VideoRecord,
     utcnow,
 )
+from .sources import make_source
 from .store import Store
 from .youtube import VideoInfo, YouTubeError
 
 log = logging.getLogger("dl4tv.sync")
+
+# Failures caused by the host rather than the video. These never count against
+# a video's retry budget and never become permanent -- fix the environment and
+# the next run picks up where it left off.
+_ENVIRONMENT_ERRORS = {"no_ffmpeg", "disk"}
 
 
 class SyncCancelled(Exception):
@@ -203,7 +208,7 @@ class SyncManager:
         destination = self.store.resolve_folder(mapping.folder)
         log.info("syncing %r -> %s", mapping.title, destination)
 
-        client = await asyncio.to_thread(make_client, self.store)
+        client = await asyncio.to_thread(make_source, self.store)
         try:
             video_ids = await asyncio.to_thread(client.playlist_video_ids, mapping.playlist_id)
             playlist_state = self.store.state.playlist(mapping.id)
@@ -279,8 +284,8 @@ class SyncManager:
             record.attempts += 1
             record.last_attempt_at = utcnow()
             if info:
-                record.duration = info.duration
-                record.published_at = info.published_at
+                record.duration = info.duration or record.duration
+                record.published_at = info.published_at or record.published_at
             if outcome.ok:
                 record.status = "downloaded"
                 record.path = outcome.path
@@ -295,9 +300,16 @@ class SyncManager:
                 record.status = "failed"
                 record.error = outcome.error
                 record.error_kind = outcome.error_kind
-                record.permanent = outcome.permanent or (
-                    record.attempts >= defaults.max_attempts
-                )
+                if outcome.error_kind in _ENVIRONMENT_ERRORS:
+                    # Nothing wrong with the video -- ffmpeg is missing, or the
+                    # disk is full. Hand the attempt back so a whole playlist
+                    # is not permanently written off by a fixable problem.
+                    record.attempts -= 1
+                    record.permanent = False
+                else:
+                    record.permanent = outcome.permanent or (
+                        record.attempts >= defaults.max_attempts
+                    )
                 run.failed += 1
                 errors.append(f"{title}: {outcome.error}")
                 log.error(
@@ -344,8 +356,8 @@ class SyncManager:
                 continue
 
             record.title = info.title
-            record.duration = info.duration
-            record.published_at = info.published_at
+            record.duration = info.duration or record.duration
+            record.published_at = info.published_at or record.published_at
 
             if info.live_state:
                 # Re-checked on the next run; a premiere becomes a normal video.

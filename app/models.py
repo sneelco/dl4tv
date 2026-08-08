@@ -64,6 +64,10 @@ class DownloadDefaults(BaseModel):
 
 
 class YouTubeConfig(BaseModel):
+    # Where playlist listings come from. "auto" uses the Data API when
+    # credentials exist and falls back to yt-dlp when they do not, so public
+    # playlists work with no Google setup at all.
+    source: Literal["auto", "api", "yt-dlp"] = "auto"
     # Used for public playlists when OAuth is not configured.
     api_key: str | None = None
     # OAuth client, required to list your own (including private) playlists.
@@ -117,6 +121,7 @@ ErrorKind = Literal[
     "geo_blocked",
     "live_or_upcoming",
     "bot_check",
+    "no_ffmpeg",
     "network",
     "disk",
     "unknown",
