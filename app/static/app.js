@@ -180,7 +180,10 @@ $$("nav button").forEach((button) => {
       v.classList.toggle("active", v.id === `view-${button.dataset.view}`)
     );
     if (button.dataset.view === "playlists") loadMappings();
-    if (button.dataset.view === "settings") loadSettings();
+    if (button.dataset.view === "settings") {
+      loadSettings();
+      refreshAccess();
+    }
   });
 });
 
@@ -193,6 +196,10 @@ async function refreshStatus() {
   try {
     status = await api("/api/status");
   } catch (err) {
+    if (/locked/i.test(err.message)) {
+      window.location.href = "/login";
+      return;
+    }
     $("#status-line").textContent = `Cannot reach dl4tv: ${err.message}`;
     return;
   }
@@ -741,6 +748,78 @@ $("#disconnect").addEventListener("click", async () => {
 });
 
 // --------------------------------------------------------------------------
+// access lock
+// --------------------------------------------------------------------------
+
+async function refreshAccess() {
+  let access;
+  try {
+    access = await api("/api/access");
+  } catch {
+    return;
+  }
+  state.access = access;
+  $("#lock-now").style.display = access.locked ? "" : "none";
+
+  const stateLine = $("#access-state");
+  if (!stateLine) return;
+  if (access.managed_by_env) {
+    stateLine.textContent =
+      "Locked by the DL4TV_PASSPHRASE environment variable — change it there, not here.";
+  } else if (access.locked) {
+    stateLine.textContent = "Locked. Enter a new passphrase below to change it.";
+  } else {
+    stateLine.textContent = "Open — anyone who can reach this page can use it.";
+  }
+  $("#save-passphrase").disabled = access.managed_by_env;
+  $("#remove-passphrase").disabled = access.managed_by_env || !access.locked;
+  $("#passphrase").disabled = access.managed_by_env;
+  $("#passphrase-confirm").disabled = access.managed_by_env;
+}
+
+async function submitPassphrase(passphrase) {
+  const note = $("#access-saved");
+  try {
+    const result = await api("/api/access/passphrase", {
+      method: "PUT",
+      body: { passphrase },
+    });
+    $("#passphrase").value = "";
+    $("#passphrase-confirm").value = "";
+    note.textContent = result.locked ? "Passphrase set." : "Passphrase removed.";
+    setTimeout(() => (note.textContent = ""), 4000);
+    toast(result.locked ? "dl4tv is now locked" : "dl4tv is now open", "ok");
+    refreshAccess();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+$("#save-passphrase").addEventListener("click", () => {
+  const passphrase = $("#passphrase").value;
+  if (passphrase !== $("#passphrase-confirm").value) {
+    toast("The two passphrases do not match", "err");
+    return;
+  }
+  if (passphrase.length < 8) {
+    toast("Use at least 8 characters", "err");
+    return;
+  }
+  submitPassphrase(passphrase);
+});
+
+$("#remove-passphrase").addEventListener("click", () => {
+  if (!confirm("Remove the passphrase? Anyone who can reach dl4tv will be able to use it."))
+    return;
+  submitPassphrase("");
+});
+
+$("#lock-now").addEventListener("click", async () => {
+  await api("/api/access/lock", { method: "POST" });
+  window.location.href = "/login";
+});
+
+// --------------------------------------------------------------------------
 // logs
 // --------------------------------------------------------------------------
 
@@ -777,4 +856,5 @@ async function tick() {
 }
 
 loadMappings().catch(() => {});
+refreshAccess();
 tick();

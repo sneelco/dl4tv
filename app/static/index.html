@@ -19,6 +19,7 @@
   </nav>
   <div class="spacer"></div>
   <span id="auth-pill" class="pill"><span class="dot"></span><span>checking…</span></span>
+  <button id="lock-now" class="btn secondary" style="display:none" title="Forget this browser's session">Lock</button>
   <button id="sync-all" class="btn">Sync now</button>
   <button id="cancel-sync" class="btn secondary" style="display:none">Cancel</button>
 </header>
@@ -100,6 +101,29 @@
 
   <!-- Settings --------------------------------------------------------- -->
   <section id="view-settings" class="view">
+    <div class="card">
+      <h2>Access</h2>
+      <p class="muted">dl4tv is open to anyone who can reach it. Set a passphrase to
+      require it before the UI will load &mdash; one passphrase, no usernames.</p>
+      <div id="access-state" class="muted" style="margin-bottom:0.75rem"></div>
+      <div class="grid" id="access-fields">
+        <div>
+          <label for="passphrase">Passphrase</label>
+          <input type="password" id="passphrase" placeholder="at least 8 characters"
+                 autocomplete="new-password">
+        </div>
+        <div>
+          <label for="passphrase-confirm">Confirm passphrase</label>
+          <input type="password" id="passphrase-confirm" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="row" style="margin-top:0.75rem">
+        <button id="save-passphrase" class="btn">Set passphrase</button>
+        <button id="remove-passphrase" class="btn danger">Remove passphrase</button>
+        <span id="access-saved" class="muted"></span>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Playlist source</h2>
       <p class="muted">Where playlist listings come from. yt-dlp needs no Google account,

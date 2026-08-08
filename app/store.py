@@ -45,6 +45,7 @@ class Store:
         self._lock = threading.RLock()
         self._config: AppConfig | None = None
         self._state: AppState | None = None
+        self._session_secret: bytes | None = None
 
     # -- config -----------------------------------------------------------
 
@@ -157,6 +158,17 @@ class Store:
     def clear_token(self) -> None:
         with self._lock:
             self.env.token_file.unlink(missing_ok=True)
+
+    # -- session signing key ----------------------------------------------
+
+    def session_secret(self) -> bytes:
+        """Key used to sign UI session cookies, created on first use."""
+        with self._lock:
+            if self._session_secret is None:
+                from .security import load_or_create_secret  # noqa: PLC0415
+
+                self._session_secret = load_or_create_secret(self.env.session_key_file)
+            return self._session_secret
 
     # -- paths ------------------------------------------------------------
 

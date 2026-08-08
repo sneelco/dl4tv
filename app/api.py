@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from . import auth as gauth
-from . import logbuf
+from . import logbuf, security
 from .models import AppConfig, DownloadDefaults, Mapping, Schedule, YouTubeConfig
 from .settings import env
 from .sources import make_source
@@ -87,6 +88,15 @@ class SyncRequest(BaseModel):
 
 class FolderRequest(BaseModel):
     path: str = Field(min_length=1)
+
+
+class UnlockRequest(BaseModel):
+    passphrase: str
+
+
+class PassphraseRequest(BaseModel):
+    # Empty (or null) removes the lock and reopens the UI.
+    passphrase: str | None = None
 
 
 # --------------------------------------------------------------------------
@@ -234,6 +244,123 @@ async def auth_disconnect() -> dict:
     log.info("disconnected YouTube account")
     return {"ok": True}
 
+
+# --------------------------------------------------------------------------
+# access lock
+# --------------------------------------------------------------------------
+
+# A locked instance is usually on a LAN, so the guard here is deliberately
+# light: enough to make guessing a passphrase impractical, not a full
+# rate-limiter.
+_MAX_FAILURES = 10
+_FAILURE_WINDOW_SECONDS = 300
+_failures: dict[str, list[float]] = {}
+
+
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _throttled(request: Request) -> bool:
+    now = time.monotonic()
+    key = _client_key(request)
+    recent = [t for t in _failures.get(key, []) if now - t < _FAILURE_WINDOW_SECONDS]
+    _failures[key] = recent
+    return len(recent) >= _MAX_FAILURES
+
+
+def _record_failure(request: Request) -> None:
+    _failures.setdefault(_client_key(request), []).append(time.monotonic())
+
+
+def _issue_session(response: Response, request: Request, store) -> None:
+    token = security.issue_token(
+        store.session_secret(), security.credential_fingerprint(store.config, env())
+    )
+    response.set_cookie(
+        security.SESSION_COOKIE,
+        token,
+        max_age=security.SESSION_TTL_SECONDS,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+        path="/",
+    )
+
+
+@router.get("/api/access")
+async def access_status(request: Request) -> dict:
+    """Open endpoint: the unlock page needs it before anyone is authenticated."""
+    from .main import authenticated  # noqa: PLC0415 - avoids an import cycle
+
+    store = get_store()
+    settings = env()
+    locked = security.is_locked(store.config, settings)
+    return {
+        "locked": locked,
+        "authenticated": not locked or authenticated(request, store, settings),
+        "managed_by_env": security.managed_by_env(settings),
+    }
+
+
+@router.post("/api/access/unlock")
+async def unlock(payload: UnlockRequest, request: Request, response: Response) -> dict:
+    store = get_store()
+    settings = env()
+    if not security.is_locked(store.config, settings):
+        return {"ok": True, "locked": False}
+    if _throttled(request):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed attempts. Wait a few minutes and try again.",
+        )
+    if not security.check_passphrase(store.config, settings, payload.passphrase):
+        _record_failure(request)
+        log.warning("failed unlock attempt from %s", _client_key(request))
+        raise HTTPException(status_code=401, detail="That passphrase is not correct.")
+    _failures.pop(_client_key(request), None)
+    _issue_session(response, request, store)
+    log.info("unlocked from %s", _client_key(request))
+    return {"ok": True, "locked": True}
+
+
+@router.post("/api/access/lock")
+async def lock(response: Response) -> dict:
+    """Drop this browser's session. The passphrase itself is unchanged."""
+    response.delete_cookie(security.SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@router.put("/api/access/passphrase")
+async def set_passphrase(
+    payload: PassphraseRequest, request: Request, response: Response
+) -> dict:
+    store = get_store()
+    settings = env()
+    if security.managed_by_env(settings):
+        raise HTTPException(
+            status_code=409,
+            detail="The passphrase is set by DL4TV_PASSPHRASE and cannot be changed here.",
+        )
+    passphrase = (payload.passphrase or "").strip()
+
+    if not passphrase:
+        store.update_config(lambda config: setattr(config.security, "passphrase_hash", None))
+        response.delete_cookie(security.SESSION_COOKIE, path="/")
+        log.info("passphrase removed -- the UI is open again")
+        return {"locked": False}
+
+    if len(passphrase) < 8:
+        raise HTTPException(
+            status_code=400, detail="Use at least 8 characters."
+        )
+    hashed = await asyncio.to_thread(security.hash_passphrase, passphrase)
+    store.update_config(lambda config: setattr(config.security, "passphrase_hash", hashed))
+    # Hand this browser a fresh session so setting a passphrase does not lock
+    # out the person who just set it.
+    _issue_session(response, request, store)
+    log.info("passphrase set -- the UI is now locked")
+    return {"locked": True}
 
 # --------------------------------------------------------------------------
 # youtube lookups

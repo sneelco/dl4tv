@@ -75,6 +75,14 @@ class YouTubeConfig(BaseModel):
     client_secret: str | None = None
 
 
+class SecurityConfig(BaseModel):
+    """Optional passphrase lock. Empty means the UI is open to anyone who can
+    reach it, which is the default."""
+
+    # scrypt hash, never the passphrase itself.
+    passphrase_hash: str | None = None
+
+
 class Mapping(BaseModel):
     """A YouTube playlist wired to a folder on disk."""
 
@@ -99,6 +107,7 @@ class AppConfig(BaseModel):
     schedule: Schedule = Field(default_factory=Schedule)
     downloads: DownloadDefaults = Field(default_factory=DownloadDefaults)
     youtube: YouTubeConfig = Field(default_factory=YouTubeConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
     mappings: list[Mapping] = Field(default_factory=list)
 
     def mapping(self, mapping_id: str) -> Mapping | None:

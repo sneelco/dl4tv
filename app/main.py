@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import base64
 import logging
-import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import logbuf
+from . import logbuf, security
 from .api import router
-from .settings import env
-from .store import get_store
+from .settings import Env, env
+from .store import Store, get_store
 from .sync import get_manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -46,8 +45,11 @@ async def lifespan(app: FastAPI):
         settings.download_dir,
         len(store.config.mappings),
     )
-    if settings.auth_enabled:
-        log.info("UI protected with HTTP basic auth")
+    if security.is_locked(store.config, settings):
+        how = "DL4TV_PASSPHRASE" if security.managed_by_env(settings) else "Settings"
+        log.info("UI locked with a passphrase (set via %s)", how)
+    else:
+        log.info("UI is open -- set a passphrase in Settings to lock it")
     manager = get_manager(store)
     await manager.start()
     try:
@@ -58,36 +60,58 @@ async def lifespan(app: FastAPI):
         log.info("dl4tv stopped")
 
 
+def authenticated(request: Request, store: Store, settings: Env) -> bool:
+    """A valid session cookie, or HTTP basic with the passphrase as password.
+
+    The basic-auth path exists so scripts and `curl -u :passphrase` keep
+    working against a locked instance.
+    """
+    fingerprint = security.credential_fingerprint(store.config, settings)
+    cookie = request.cookies.get(security.SESSION_COOKIE)
+    if security.verify_token(cookie, store.session_secret(), fingerprint):
+        return True
+
+    header = request.headers.get("authorization", "")
+    if header.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(header[6:]).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        _user, _, candidate = decoded.partition(":")
+        return security.check_passphrase(store.config, settings, candidate)
+    return False
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="dl4tv",
         description="Download flagged YouTube playlists into folders for ErsatzTV.",
         lifespan=lifespan,
     )
-    settings = env()
+    # Reachable without a passphrase: the health probe, the unlock page itself,
+    # and the endpoints that page needs to work.
+    open_paths = {"/healthz", "/login", "/api/access", "/api/access/unlock"}
 
-    if settings.auth_enabled:
+    @app.middleware("http")
+    async def access_gate(request, call_next):
+        path = request.url.path
+        if path in open_paths or path.startswith("/static/"):
+            return await call_next(request)
 
-        @app.middleware("http")
-        async def basic_auth(request, call_next):
-            if request.url.path == "/healthz":
-                return await call_next(request)
-            header = request.headers.get("authorization", "")
-            if header.startswith("Basic "):
-                try:
-                    decoded = base64.b64decode(header[6:]).decode("utf-8")
-                    user, _, password = decoded.partition(":")
-                except (ValueError, UnicodeDecodeError):
-                    user = password = ""
-                if secrets.compare_digest(user, settings.username or "") and (
-                    secrets.compare_digest(password, settings.password or "")
-                ):
-                    return await call_next(request)
-            return Response(
+        store = get_store()
+        settings = env()
+        if not security.is_locked(store.config, settings):
+            return await call_next(request)
+        if authenticated(request, store, settings):
+            return await call_next(request)
+
+        if path.startswith("/api/") or path.startswith("/auth/"):
+            return JSONResponse(
+                {"detail": "dl4tv is locked. Unlock it with your passphrase."},
                 status_code=401,
                 headers={"WWW-Authenticate": 'Basic realm="dl4tv"'},
-                content="Authentication required",
             )
+        return RedirectResponse("/login", status_code=307)
 
     app.include_router(router)
 
@@ -98,6 +122,10 @@ def create_app() -> FastAPI:
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/login", include_in_schema=False)
+    async def login_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "login.html")
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
