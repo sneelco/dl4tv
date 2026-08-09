@@ -414,9 +414,29 @@ lets ErsatzTV copy the video stream rather than transcode it.
 The 1080p ceiling is not arbitrary: YouTube simply does not offer H.264 above
 1080p, so anything higher is VP9 or AV1 by definition.
 
+The compatible presets keep **every** fallback inside H.264-in-mp4. This
+matters more than it sounds: yt-dlp will cheerfully write VP9 or AV1 into a
+`.mp4` if asked, producing a file that looks correct and plays nowhere. On the
+rare video with no H.264 at all, these presets fail visibly instead — the error
+shows up against that video in the UI, and you can switch it to *Best quality*.
+
 Changing this only affects **new** downloads. To re-fetch what you already
 have, delete the files from the folder — dl4tv notices a downloaded video whose
 file has gone missing and fetches it again on the next sync.
+
+#### Checking what you actually got
+
+If a file still will not play, look at what is inside it rather than at the
+extension:
+
+```bash
+ffprobe -v error -show_entries stream=codec_type,codec_name,profile,width,height \
+  -of default=noprint_wrappers=1 "your-video.mp4"
+```
+
+`codec_name=h264` and `codec_name=aac` is what the compatible preset should
+give you. Anything else — `vp9`, `av01`, `opus` — means the file is not what its
+name suggests.
 
 ---
 
