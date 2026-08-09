@@ -44,6 +44,11 @@ class DownloadDefaults(BaseModel):
     merge_output_format: str = "mkv"
     output_template: str = "%(title)s [%(id)s].%(ext)s"
     embed_metadata: bool = True
+    # Chapters are written into mp4 as a separate text track, and players that
+    # cannot read it may refuse the whole file. Off by default for that reason.
+    embed_chapters: bool = False
+    # Embedding cover art adds a second video stream. Some TVs then play the
+    # still image instead of the video, or reject the file outright.
     embed_thumbnail: bool = False
     write_thumbnail: bool = False
     write_subtitles: bool = False

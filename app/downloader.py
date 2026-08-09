@@ -186,7 +186,11 @@ def build_ydl_opts(
         postprocessors.append({"key": "FFmpegEmbedSubtitle"})
     if defaults.embed_metadata:
         postprocessors.append(
-            {"key": "FFmpegMetadata", "add_metadata": True, "add_chapters": True}
+            {
+                "key": "FFmpegMetadata",
+                "add_metadata": True,
+                "add_chapters": defaults.embed_chapters,
+            }
         )
     if defaults.embed_thumbnail:
         postprocessors.append({"key": "EmbedThumbnail"})

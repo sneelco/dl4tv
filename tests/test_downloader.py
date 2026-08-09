@@ -97,3 +97,46 @@ def test_write_nfo(tmp_path):
     assert root.findtext("runtime") == "10"
     assert [t.text for t in root.findall("tag")] == ["cooking", "how-to"]
     assert root.findtext("uniqueid") == "abc123"
+
+
+def _postprocessor(opts, key):
+    return next((pp for pp in opts["postprocessors"] if pp["key"] == key), None)
+
+
+def test_chapters_are_not_embedded_by_default(tmp_path):
+    """Chapters become a text track in an mp4, which some players refuse.
+
+    A real file produced with this on carried a `bin_data (text)` stream that
+    ffprobe itself reported as an unsupported codec.
+    """
+    opts = build_ydl_opts(DownloadDefaults(), None, tmp_path)
+
+    metadata = _postprocessor(opts, "FFmpegMetadata")
+    assert metadata is not None, "titles and descriptions are still embedded"
+    assert metadata["add_chapters"] is False
+
+
+def test_chapters_can_be_turned_on(tmp_path):
+    opts = build_ydl_opts(DownloadDefaults(embed_chapters=True), None, tmp_path)
+
+    assert _postprocessor(opts, "FFmpegMetadata")["add_chapters"] is True
+
+
+def test_no_thumbnail_stream_by_default(tmp_path):
+    """Embedding cover art adds a second video stream to the file."""
+    opts = build_ydl_opts(DownloadDefaults(), None, tmp_path)
+
+    assert _postprocessor(opts, "EmbedThumbnail") is None
+
+
+def test_a_default_download_adds_no_extra_streams(tmp_path):
+    """The whole point: out of the box, produce video + audio and nothing else.
+
+    metube produces a two-stream file and plays; dl4tv produced four streams
+    and did not.
+    """
+    opts = build_ydl_opts(DownloadDefaults(), None, tmp_path)
+
+    stream_adding = {"EmbedThumbnail", "FFmpegEmbedSubtitle"}
+    assert not stream_adding.intersection(pp["key"] for pp in opts["postprocessors"])
+    assert _postprocessor(opts, "FFmpegMetadata")["add_chapters"] is False
