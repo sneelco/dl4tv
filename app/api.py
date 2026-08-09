@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from . import auth as gauth
-from . import logbuf, security
+from . import logbuf, presets, security
 from .models import AppConfig, DownloadDefaults, Mapping, Schedule, YouTubeConfig
 from .settings import env
 from .sources import make_source
@@ -167,6 +167,10 @@ async def get_settings() -> dict:
         "public_url_managed_by_env": bool(env().public_url),
         "schedule": config.schedule,
         "downloads": config.downloads,
+        "format_presets": presets.FORMAT_PRESETS,
+        "format_preset": presets.match_preset(
+            config.downloads.format, config.downloads.merge_output_format
+        ),
         "youtube": {
             "source": config.youtube.source,
             "api_key": _masked(config.youtube.api_key),
