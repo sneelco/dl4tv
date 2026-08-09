@@ -32,11 +32,32 @@ YOUTUBE_FORMATS = [
     _format(format_id="401", ext="mp4", vcodec="av01.0.13M.08", acodec="none", height=2160, tbr=12000),
 ]
 
-# A video with no H.264 at all, to exercise the fallbacks.
+# A video with no H.264 at all and no muxed stream.
 VP9_ONLY_FORMATS = [
     _format(format_id="251", ext="webm", vcodec="none", acodec="opus", abr=130),
     _format(format_id="248", ext="webm", vcodec="vp9", acodec="none", height=1080, tbr=4000),
 ]
+
+# No H.264 among the adaptive streams, but the usual muxed 360p mp4 is there.
+VP9_PLUS_MUXED_FORMATS = [
+    _format(format_id="18", ext="mp4", vcodec="avc1.42001E", acodec="mp4a.40.2", height=360, tbr=700),
+    _format(format_id="251", ext="webm", vcodec="none", acodec="opus", abr=130),
+    _format(format_id="248", ext="webm", vcodec="vp9", acodec="none", height=1080, tbr=4000),
+]
+
+# Selecting nothing is a valid, deliberate outcome for the compatible presets.
+def try_select(format_selector: str, formats: list[dict]) -> list[dict]:
+    ydl = yt_dlp.YoutubeDL({"quiet": True, "simulate": True})
+    chosen = list(
+        ydl.build_format_selector(format_selector)(
+            {"formats": formats, "incomplete_formats": False}
+        )
+    )
+    return chosen[0].get("requested_formats") or [chosen[0]] if chosen else []
+
+
+MP4_SAFE_VIDEO = ("avc1", "h264")
+MP4_SAFE_AUDIO = ("mp4a", "aac")
 
 
 def select(format_selector: str, formats: list[dict]) -> list[dict]:
@@ -87,12 +108,38 @@ def test_compatible_720_caps_the_resolution():
     assert picked[0]["height"] == 720
 
 
-@pytest.mark.parametrize("preset_id", [p["id"] for p in FORMAT_PRESETS])
-def test_every_preset_still_selects_something_without_h264(preset_id):
-    """The fallbacks matter: a video with no H.264 must still download."""
-    picked = select(preset(preset_id)["format"], VP9_ONLY_FORMATS)
+@pytest.mark.parametrize("preset_id", ["compatible", "compatible-720"])
+@pytest.mark.parametrize(
+    "formats", [YOUTUBE_FORMATS, VP9_ONLY_FORMATS, VP9_PLUS_MUXED_FORMATS]
+)
+def test_compatible_presets_never_pick_something_an_mp4_should_not_hold(preset_id, formats):
+    """The bug this guards against.
 
-    assert picked, "a preset must never leave a video unselectable"
+    yt-dlp will write VP9 or AV1 into a .mp4 when asked to, producing a file
+    that looks right and plays nowhere. Whatever these presets select must be
+    safe to put in the mp4 container they ask for -- or they must select
+    nothing at all.
+    """
+    picked = try_select(preset(preset_id)["format"], formats)
+    if not picked:
+        return  # failing outright is allowed; mislabelling is not
+
+    video, audio = codecs(picked)
+    assert video.startswith(MP4_SAFE_VIDEO), f"{video} must not be written into an mp4"
+    assert audio.startswith(MP4_SAFE_AUDIO), f"{audio} must not be written into an mp4"
+
+
+def test_compatible_falls_back_to_the_muxed_mp4_when_there_is_no_h264_stream():
+    picked = try_select(preset("compatible")["format"], VP9_PLUS_MUXED_FORMATS)
+
+    assert [f["format_id"] for f in picked] == ["18"]
+
+
+def test_best_quality_is_unconstrained():
+    """Only the compatible presets promise mp4-safe codecs."""
+    picked = select(preset("best")["format"], VP9_ONLY_FORMATS)
+
+    assert picked, "best quality should still download a VP9-only video"
 
 
 @pytest.mark.parametrize("preset_id", [p["id"] for p in FORMAT_PRESETS])

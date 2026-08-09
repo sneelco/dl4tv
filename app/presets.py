@@ -30,13 +30,19 @@ FORMAT_PRESETS: list[dict[str, str]] = [
         "detail": (
             "Plays on essentially anything, and lets ErsatzTV copy the video "
             "stream instead of transcoding it. Capped at 1080p, because YouTube "
-            "does not offer H.264 above that."
+            "does not offer H.264 above that. A video with no H.264 at all fails "
+            "rather than producing an mp4 your player cannot decode."
         ),
-        # The fallbacks matter: "best" alone means "best *muxed* format", and a
-        # DASH-only video has none, so a chain ending there can select nothing
-        # at all. Falling back to bestvideo+bestaudio keeps the download working
-        # even when H.264 is unavailable.
-        "format": "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo+bestaudio/best",
+        # Every branch stays H.264-in-mp4 on purpose. An earlier version fell
+        # back to bestvideo+bestaudio (any codec) while still forcing an mp4
+        # container, and yt-dlp will happily write VP9 or AV1 into a .mp4 -- a
+        # file that looks correct and plays nowhere. Better to fail visibly on
+        # the rare video with no H.264 than to hand ErsatzTV a mislabelled one.
+        "format": (
+            "bestvideo[vcodec~='^(h264|avc)'][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[vcodec~='^(h264|avc)']+bestaudio[acodec~='^(mp4a|aac)']/"
+            "best[ext=mp4]"
+        ),
         "merge_output_format": "mp4",
     },
     {
@@ -47,8 +53,9 @@ FORMAT_PRESETS: list[dict[str, str]] = [
             "or high bitrates."
         ),
         "format": (
-            "bestvideo[vcodec^=avc1][height<=720]+bestaudio[acodec^=mp4a]/"
-            "bestvideo[height<=720]+bestaudio/bestvideo+bestaudio/best"
+            "bestvideo[vcodec~='^(h264|avc)'][height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[vcodec~='^(h264|avc)'][height<=720]+bestaudio[acodec~='^(mp4a|aac)']/"
+            "best[ext=mp4][height<=720]/best[ext=mp4]"
         ),
         "merge_output_format": "mp4",
     },
