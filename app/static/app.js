@@ -8,6 +8,9 @@ const state = {
   settings: null,
   mappings: [],
   openPlaylists: new Set(),
+  // Last-rendered signature per playlist, so an unchanged poll touches no DOM.
+  playlistSignatures: new Map(),
+  runsSignature: null,
   logSeq: 0,
   downloadRoot: "",
 };
@@ -43,6 +46,12 @@ function toast(message, kind = "") {
   el.textContent = message;
   $("#toasts").append(el);
   setTimeout(() => el.remove(), kind === "err" ? 9000 : 4500);
+}
+
+/** Write only when the value actually differs — an identical assignment still
+ * replaces the text node, which shows up as DOM churn. */
+function setText(el, value) {
+  if (el && el.textContent !== value) el.textContent = value;
 }
 
 const esc = (value) =>
@@ -266,77 +275,160 @@ async function refreshStatus() {
   renderRuns(status.runs);
 }
 
-function statusPill(playlist) {
-  const map = {
-    ok: ["ok", "ok"],
-    partial: ["warn", "partial"],
-    error: ["err", "error"],
-    never: ["", "never run"],
-  };
-  const [cls, label] = map[playlist.last_status] || ["", playlist.last_status];
-  return `<span class="pill ${cls}"><span class="dot"></span>${esc(label)}</span>`;
+const STATUS_PILL = {
+  ok: ["ok", "ok"],
+  partial: ["warn", "partial"],
+  error: ["err", "error"],
+  never: ["", "never run"],
+};
+
+/**
+ * Everything the summary row displays. The card is only touched when this
+ * changes, so a poll that brings no news leaves the DOM — and the page scroll —
+ * completely alone.
+ */
+function playlistSignature(p) {
+  return JSON.stringify([
+    p.title,
+    p.enabled,
+    p.folder,
+    p.last_status,
+    p.last_error,
+    p.last_sync_at,
+    p.counts,
+  ]);
+}
+
+function createPlaylistCard(id) {
+  const card = document.createElement("div");
+  card.className = "playlist";
+  card.dataset.id = id;
+  card.innerHTML = `
+    <div class="playlist-head">
+      <span class="title"></span>
+      <span class="pill" data-status><span class="dot"></span><span data-status-label></span></span>
+      <span class="pill" data-disabled style="display:none">disabled</span>
+      <span class="muted mono" data-folder></span>
+      <div style="flex:1"></div>
+      <span class="muted" data-summary></span>
+      <button class="btn small secondary" data-act="toggle">Details</button>
+      <button class="btn small" data-act="sync">Sync</button>
+    </div>
+    <div class="playlist-body">
+      <div class="pill err" data-error style="display:none;margin-bottom:.5rem"></div>
+      <div data-videos><div class="muted">Loading…</div></div>
+    </div>`;
+
+  // Wired once, when the card is created — not on every refresh.
+  $('[data-act="toggle"]', card).addEventListener("click", () => {
+    if (state.openPlaylists.has(id)) {
+      state.openPlaylists.delete(id);
+      card.classList.remove("open");
+      $('[data-act="toggle"]', card).textContent = "Details";
+    } else {
+      state.openPlaylists.add(id);
+      card.classList.add("open");
+      $('[data-act="toggle"]', card).textContent = "Hide";
+      loadVideos(id);
+    }
+  });
+  $('[data-act="sync"]', card).addEventListener("click", async () => {
+    try {
+      await api(`/api/mappings/${id}/sync`, { method: "POST" });
+      toast("Sync started", "ok");
+      refreshStatus();
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
+  return card;
+}
+
+function updatePlaylistCard(card, p) {
+  setText($(".title", card), p.title);
+
+  const [cls, label] = STATUS_PILL[p.last_status] || ["", p.last_status];
+  const pill = $("[data-status]", card);
+  const pillClass = `pill ${cls}`;
+  if (pill.className !== pillClass) pill.className = pillClass;
+  setText($("[data-status-label]", card), label);
+
+  $("[data-disabled]", card).style.display = p.enabled ? "none" : "";
+  setText($("[data-folder]", card), p.folder);
+
+  const error = $("[data-error]", card);
+  setText(error, p.last_error || "");
+  error.style.display = p.last_error ? "" : "none";
+
+  setText(
+    $('[data-act="toggle"]', card),
+    state.openPlaylists.has(p.id) ? "Hide" : "Details"
+  );
+  updatePlaylistSummary(card, p);
+}
+
+function updatePlaylistSummary(card, p) {
+  setText(
+    $("[data-summary]", card),
+    `${p.counts.downloaded} downloaded` +
+      (p.counts.permanent ? ` · ${p.counts.permanent} blocked` : "") +
+      ` · last sync ${relTime(p.last_sync_at)}`
+  );
 }
 
 function renderPlaylistCards(playlists) {
   const container = $("#playlist-list");
+
   if (!playlists.length) {
-    container.innerHTML =
-      '<div class="empty">No playlists mapped yet — add one on the Playlists tab.</div>';
+    if (!container.querySelector(".empty")) {
+      container.innerHTML =
+        '<div class="empty">No playlists mapped yet — add one on the Playlists tab.</div>';
+    }
+    state.playlistSignatures.clear();
     return;
   }
-  container.innerHTML = playlists
-    .map(
-      (p) => `
-    <div class="playlist ${state.openPlaylists.has(p.id) ? "open" : ""}" data-id="${p.id}">
-      <div class="playlist-head">
-        <span class="title">${esc(p.title)}</span>
-        ${statusPill(p)}
-        ${p.enabled ? "" : '<span class="pill">disabled</span>'}
-        <span class="muted mono">${esc(p.folder)}</span>
-        <div class="spacer" style="flex:1"></div>
-        <span class="muted">${p.counts.downloaded} downloaded${
-        p.counts.permanent ? ` · ${p.counts.permanent} blocked` : ""
-      } · last sync ${relTime(p.last_sync_at)}</span>
-        <button class="btn small secondary" data-act="toggle">${
-          state.openPlaylists.has(p.id) ? "Hide" : "Details"
-        }</button>
-        <button class="btn small" data-act="sync">Sync</button>
-      </div>
-      <div class="playlist-body" data-body="${p.id}">
-        ${p.last_error ? `<div class="pill err" style="margin-bottom:.5rem">${esc(p.last_error)}</div>` : ""}
-        <div class="muted">Loading…</div>
-      </div>
-    </div>`
-    )
-    .join("");
+  const placeholder = container.querySelector(".empty");
+  if (placeholder) placeholder.remove();
 
-  $$("#playlist-list .playlist").forEach((card) => {
-    const id = card.dataset.id;
-    $('[data-act="toggle"]', card).addEventListener("click", () => {
-      if (state.openPlaylists.has(id)) {
-        state.openPlaylists.delete(id);
-        card.classList.remove("open");
-      } else {
-        state.openPlaylists.add(id);
-        card.classList.add("open");
-        loadVideos(id);
-      }
-    });
-    $('[data-act="sync"]', card).addEventListener("click", async () => {
-      try {
-        await api(`/api/mappings/${id}/sync`, { method: "POST" });
-        toast("Sync started", "ok");
-        refreshStatus();
-      } catch (err) {
-        toast(err.message, "err");
-      }
-    });
-    if (state.openPlaylists.has(id)) loadVideos(id);
-  });
+  for (const p of playlists) {
+    let card = container.querySelector(`.playlist[data-id="${p.id}"]`);
+    if (!card) {
+      card = createPlaylistCard(p.id);
+      container.append(card);
+    }
+    const signature = playlistSignature(p);
+    if (state.playlistSignatures.get(p.id) === signature) {
+      // Nothing new; only the "N minutes ago" text drifts.
+      updatePlaylistSummary(card, p);
+      continue;
+    }
+    state.playlistSignatures.set(p.id, signature);
+    updatePlaylistCard(card, p);
+    // The video list is only worth re-fetching when this playlist actually
+    // changed, and only while someone is looking at it.
+    if (state.openPlaylists.has(p.id)) loadVideos(p.id);
+  }
+
+  const wanted = playlists.map((p) => p.id);
+  for (const card of [...container.querySelectorAll(".playlist")]) {
+    if (!wanted.includes(card.dataset.id)) {
+      card.remove();
+      state.playlistSignatures.delete(card.dataset.id);
+    }
+  }
+  // Reorder only if it genuinely differs — re-appending moves nodes, which
+  // would undo a selection or blur a focused control inside a card.
+  const current = [...container.querySelectorAll(".playlist")].map((c) => c.dataset.id);
+  if (current.join() !== wanted.join()) {
+    for (const id of wanted) {
+      const card = container.querySelector(`.playlist[data-id="${id}"]`);
+      if (card) container.append(card);
+    }
+  }
 }
 
 async function loadVideos(mappingId) {
-  const body = $(`[data-body="${mappingId}"]`);
+  const body = $(`.playlist[data-id="${mappingId}"] [data-videos]`);
   if (!body) return;
   let data;
   try {
@@ -403,6 +495,11 @@ async function loadVideos(mappingId) {
 
 function renderRuns(runs) {
   const container = $("#run-list");
+  // Same idea as the playlist cards: redraw only when something changed.
+  const signature = JSON.stringify(runs);
+  if (state.runsSignature === signature) return;
+  state.runsSignature = signature;
+
   if (!runs || !runs.length) {
     container.innerHTML = '<div class="empty">Nothing has run yet.</div>';
     return;
