@@ -13,7 +13,7 @@ from __future__ import annotations
 
 # YouTube offers H.264 (avc1) only up to 1080p; 1440p and 4K are VP9 or AV1
 # only. So "most compatible" necessarily means "no more than 1080p".
-FORMAT_PRESETS: list[dict[str, str]] = [
+FORMAT_PRESETS: list[dict] = [
     {
         "id": "best",
         "label": "Best quality",
@@ -23,6 +23,7 @@ FORMAT_PRESETS: list[dict[str, str]] = [
         ),
         "format": "bestvideo*+bestaudio/best",
         "merge_output_format": "mkv",
+        "settings": {},
     },
     {
         "id": "compatible",
@@ -44,6 +45,11 @@ FORMAT_PRESETS: list[dict[str, str]] = [
             "best[ext=mp4]"
         ),
         "merge_output_format": "mp4",
+        # Codec is only half of it. Embedding cover art adds a second video
+        # stream, and chapters go into an mp4 as a text track -- together they
+        # turn a valid H.264 file into one a TV may refuse, so a preset named
+        # "most compatible" turns both off.
+        "settings": {"embed_thumbnail": False, "embed_chapters": False},
     },
     {
         "id": "compatible-720",
@@ -58,6 +64,7 @@ FORMAT_PRESETS: list[dict[str, str]] = [
             "best[ext=mp4][height<=720]/best[ext=mp4]"
         ),
         "merge_output_format": "mp4",
+        "settings": {"embed_thumbnail": False, "embed_chapters": False},
     },
 ]
 

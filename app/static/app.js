@@ -766,6 +766,7 @@ async function loadSettings() {
   $("#dl-max-new").value = downloads.max_new_per_run ?? "";
   $("#dl-sponsorblock").value = (downloads.sponsorblock_remove || []).join(",");
   $("#dl-metadata").checked = downloads.embed_metadata;
+  $("#dl-chapters").checked = downloads.embed_chapters;
   $("#dl-thumb").checked = downloads.embed_thumbnail;
   $("#dl-writethumb").checked = downloads.write_thumbnail;
   $("#dl-writesubs").checked = downloads.write_subtitles;
@@ -829,6 +830,7 @@ function collectSettings() {
         .map((s) => s.trim())
         .filter(Boolean),
       embed_metadata: $("#dl-metadata").checked,
+      embed_chapters: $("#dl-chapters").checked,
       embed_thumbnail: $("#dl-thumb").checked,
       write_thumbnail: $("#dl-writethumb").checked,
       write_subtitles: $("#dl-writesubs").checked,
@@ -981,7 +983,19 @@ $("#dl-preset").addEventListener("change", () => {
   }
   $("#dl-format").value = chosen.format;
   $("#dl-container").value = chosen.merge_output_format;
-  $("#dl-preset-hint").textContent = `${chosen.detail} Save settings to apply.`;
+  // A preset owns the whole shape of the output, not just the codec.
+  const fields = { embed_thumbnail: "#dl-thumb", embed_chapters: "#dl-chapters" };
+  const changed = [];
+  for (const [option, wanted] of Object.entries(chosen.settings || {})) {
+    const box = $(fields[option]);
+    if (box && box.checked !== Boolean(wanted)) {
+      box.checked = Boolean(wanted);
+      changed.push(box.nextElementSibling.textContent.toLowerCase());
+    }
+  }
+  $("#dl-preset-hint").textContent =
+    `${chosen.detail}${changed.length ? ` Also turned off: ${changed.join(", ")}.` : ""}` +
+    " Save settings to apply.";
 });
 
 $("#dl-format").addEventListener("input", syncPresetToFields);

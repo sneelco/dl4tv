@@ -186,3 +186,31 @@ def test_match_preset_tolerates_surrounding_whitespace():
 
 def test_unknown_preset_id():
     assert preset("nope") is None
+
+
+# -- presets own the whole output shape, not just the codec ----------------
+
+
+@pytest.mark.parametrize("preset_id", ["compatible", "compatible-720"])
+def test_compatible_presets_turn_off_the_stream_adding_options(preset_id):
+    """A file is not "compatible" just because the codec is right.
+
+    Embedded cover art is a second video stream and chapters are a text track;
+    either can stop a TV playing an otherwise perfect H.264 file.
+    """
+    settings = preset(preset_id)["settings"]
+
+    assert settings["embed_thumbnail"] is False
+    assert settings["embed_chapters"] is False
+
+
+def test_every_preset_declares_its_settings():
+    for p in FORMAT_PRESETS:
+        assert isinstance(p["settings"], dict)
+
+
+def test_preset_settings_name_real_download_options():
+    known = set(DownloadDefaults.model_fields)
+    for p in FORMAT_PRESETS:
+        unknown = set(p["settings"]) - known
+        assert not unknown, f"{p['id']} sets unknown options: {unknown}"

@@ -424,6 +424,31 @@ Changing this only affects **new** downloads. To re-fetch what you already
 have, delete the files from the folder — dl4tv notices a downloaded video whose
 file has gone missing and fetches it again on the next sync.
 
+#### Extra streams are the other way a file fails
+
+Getting the codec right is only half of it. Two options add whole extra tracks
+to the file:
+
+| Option | What it adds | Why it matters |
+|---|---|---|
+| Embed thumbnail | A second **video** stream (PNG cover art) | Players may show the still instead of the video, or refuse the file |
+| Embed chapters | A **text** track carrying chapter marks | Some players reject a track they cannot decode |
+
+Both are legal mp4 and both are **off by default**. *Embed metadata* — title,
+artist, description — stays on and adds no streams. Choosing a *Most
+compatible* preset also switches the two stream-adding options off, because a
+file is not compatible just because the codec is.
+
+For comparison, a file that plays has exactly two streams:
+
+```
+Stream #0:0: Video: h264 (High) (avc1 / 0x31637661), 1920x1080
+Stream #0:1: Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, stereo
+```
+
+A file with a `png (mp4v)` stream or a `bin_data (text)` stream has the extras
+described above.
+
 #### Checking what you actually got
 
 If a file still will not play, look at what is inside it rather than at the
@@ -434,9 +459,9 @@ ffprobe -v error -show_entries stream=codec_type,codec_name,profile,width,height
   -of default=noprint_wrappers=1 "your-video.mp4"
 ```
 
-`codec_name=h264` and `codec_name=aac` is what the compatible preset should
-give you. Anything else — `vp9`, `av01`, `opus` — means the file is not what its
-name suggests.
+`codec_name=h264` and `codec_name=aac`, and **nothing else**, is what the
+compatible preset should give you. `vp9` or `av01` means the file is not what
+its name suggests; a third or fourth stream means an embed option is on.
 
 ---
 
