@@ -215,7 +215,12 @@
 
     <div class="card">
       <h2>Downloads</h2>
-      <div class="grid">
+      <div>
+        <label for="dl-preset">Format preset</label>
+        <select id="dl-preset"></select>
+        <div class="hint" id="dl-preset-hint"></div>
+      </div>
+      <div class="grid" style="margin-top:0.75rem">
         <div>
           <label for="dl-format">yt-dlp format selector</label>
           <input type="text" id="dl-format">

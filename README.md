@@ -393,6 +393,31 @@ selector, merge container, output template, embedded metadata/thumbnails,
 subtitles, SponsorBlock categories to cut, rate limit, cookies file, retry
 count, and a global max-new-per-run.
 
+#### Format presets
+
+**Settings → Downloads → Format preset** fills in the format selector and
+container for you. The raw fields stay editable — change them and the dropdown
+switches to *Custom*.
+
+| Preset | Gets you | Trade-off |
+|---|---|---|
+| Best quality | Highest resolution available, usually VP9 or AV1 | Many TVs and set-top boxes cannot decode these |
+| Most compatible | H.264 + AAC in mp4 | Capped at 1080p |
+| Most compatible, 720p | The same, capped at 720p | For hardware that struggles with 1080p |
+
+**If videos will not play on your TV, this is almost certainly why.** By
+default yt-dlp takes the best available stream, which on YouTube means AV1 or
+VP9 at up to 4K — formats most televisions have no decoder for. Switching to
+*Most compatible* gets H.264 + AAC, which plays on essentially anything, and
+lets ErsatzTV copy the video stream rather than transcode it.
+
+The 1080p ceiling is not arbitrary: YouTube simply does not offer H.264 above
+1080p, so anything higher is VP9 or AV1 by definition.
+
+Changing this only affects **new** downloads. To re-fetch what you already
+have, delete the files from the folder — dl4tv notices a downloaded video whose
+file has gone missing and fetches it again on the next sync.
+
 ---
 
 ## Container images

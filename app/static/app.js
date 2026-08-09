@@ -8,6 +8,7 @@ const state = {
   settings: null,
   mappings: [],
   openPlaylists: new Set(),
+  formatPresets: [],
   // Last-rendered signature per playlist, so an unchanged poll touches no DOM.
   playlistSignatures: new Map(),
   runsSignature: null,
@@ -753,6 +754,8 @@ async function loadSettings() {
   $("#sched-interval").value = schedule.interval_minutes;
   $("#sched-onstart").checked = schedule.run_on_start;
 
+  state.formatPresets = settings.format_presets || [];
+  renderPresetOptions(state.formatPresets);
   $("#dl-format").value = downloads.format;
   $("#dl-container").value = downloads.merge_output_format;
   $("#dl-template").value = downloads.output_template;
@@ -768,6 +771,7 @@ async function loadSettings() {
   $("#dl-writesubs").checked = downloads.write_subtitles;
   $("#dl-embedsubs").checked = downloads.embed_subtitles;
 
+  syncPresetToFields();
   $("#public-url").value = settings.public_url || "";
   $("#public-url").disabled = settings.public_url_managed_by_env;
   $("#yt-source").value = youtube.source || "auto";
@@ -940,6 +944,48 @@ $("#lock-now").addEventListener("click", async () => {
   await api("/api/access/lock", { method: "POST" });
   window.location.href = "/login";
 });
+
+// --------------------------------------------------------------------------
+// download format presets
+// --------------------------------------------------------------------------
+
+const CUSTOM_PRESET = "custom";
+
+function renderPresetOptions(presetList) {
+  const select = $("#dl-preset");
+  select.innerHTML =
+    presetList.map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("") +
+    `<option value="${CUSTOM_PRESET}">Custom — set the fields below yourself</option>`;
+}
+
+/** Keep the dropdown honest about what the raw fields currently say. */
+function syncPresetToFields() {
+  const format = $("#dl-format").value.trim();
+  const container = $("#dl-container").value.trim();
+  const match = (state.formatPresets || []).find(
+    (p) => p.format === format && p.merge_output_format === container
+  );
+  const id = match ? match.id : CUSTOM_PRESET;
+  $("#dl-preset").value = id;
+  $("#dl-preset-hint").textContent = match
+    ? match.detail
+    : "These fields do not match a preset. Pick one to overwrite them.";
+}
+
+$("#dl-preset").addEventListener("change", () => {
+  const chosen = (state.formatPresets || []).find((p) => p.id === $("#dl-preset").value);
+  if (!chosen) {
+    // "Custom" selected: leave whatever is in the fields alone.
+    $("#dl-preset-hint").textContent = "Edit the fields below as you like.";
+    return;
+  }
+  $("#dl-format").value = chosen.format;
+  $("#dl-container").value = chosen.merge_output_format;
+  $("#dl-preset-hint").textContent = `${chosen.detail} Save settings to apply.`;
+});
+
+$("#dl-format").addEventListener("input", syncPresetToFields);
+$("#dl-container").addEventListener("input", syncPresetToFields);
 
 // --------------------------------------------------------------------------
 // logs
